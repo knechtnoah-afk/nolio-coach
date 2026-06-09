@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pôle Performance — Nice Métropole</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+:root{--bg:#0e1117;--s:#161b25;--s2:#1e2535;--bd:#2a3347;--ac:#3b82f6;--ac2:#6366f1;
+  --gn:#22c55e;--rd:#ef4444;--or:#f97316;--yl:#eab308;--tx:#e2e8f0;--mt:#64748b;--r:13px;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh;}
+
+/* ── PAGE COUREUR (fond clair) ── */
+.athlete-page{min-height:100vh;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+.athlete-card{background:#fff;border-radius:20px;box-shadow:0 4px 40px rgba(0,0,0,.10);padding:40px 36px;max-width:420px;width:100%;text-align:center;}
+.a-logo{width:72px;height:72px;background:linear-gradient(135deg,#3b82f6,#6366f1);border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px;}
+.a-club{font-size:11px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+.a-title{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0f172a;margin-bottom:8px;line-height:1.3;}
+.a-sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:28px;}
+.a-perms{background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:28px;text-align:left;}
+.a-perms-title{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+.a-perm{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;color:#334155;}
+.a-perm:not(:last-child){border-bottom:1px solid #e2e8f0;}
+.a-perm-icon{width:28px;height:28px;border-radius:8px;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+.a-btn{display:block;width:100%;background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;color:#fff;padding:14px;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;transition:opacity .2s;margin-bottom:10px;}
+.a-btn:hover{opacity:.88;}
+.a-note{font-size:11px;color:#94a3b8;line-height:1.5;}
+.a-footer{margin-top:24px;font-size:11px;color:#94a3b8;text-align:center;}
+.a-coach-link{margin-top:16px;font-size:11px;color:#cbd5e1;text-align:center;}
+.a-coach-link a{color:#94a3b8;text-decoration:none;border-bottom:1px dashed #94a3b8;}
+
+/* Succès coureur */
+.a-success-icon{width:72px;height:72px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;}
+.a-success-badge{display:inline-flex;align-items:center;gap:6px;background:#dcfce7;color:#16a34a;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;}
+
+/* ── ÉCRANS PARTAGÉS ── */
+.screen{display:none;}
+.screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.spin{width:38px;height:38px;border:3px solid #e2e8f0;border-top-color:#3b82f6;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── PAGE COACH (fond sombre) ── */
+.coach-page{min-height:100vh;background:var(--bg);}
+
+/* Mot de passe coach */
+.pw-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.pw-card{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:28px;width:100%;max-width:380px;text-align:center;}
+.pw-card h2{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:#fff;margin-bottom:6px;}
+.pw-card p{font-size:12px;color:var(--mt);margin-bottom:20px;}
+.pw-input{background:var(--s2);border:1px solid var(--bd);color:var(--tx);padding:10px 14px;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;width:100%;margin-bottom:10px;transition:border .2s;}
+.pw-input:focus{border-color:var(--ac);}
+.pw-btn{background:linear-gradient(135deg,var(--ac),var(--ac2));border:none;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;width:100%;transition:opacity .2s;}
+.pw-btn:hover{opacity:.85;}
+.pw-err{color:#fca5a5;font-size:11px;margin-top:6px;display:none;}
+
+/* Header coach */
+.hdr{background:linear-gradient(135deg,#0f1724,#151e2e);border-bottom:1px solid var(--bd);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr-l{display:flex;align-items:center;gap:11px;}
+.logo{width:34px;height:34px;background:linear-gradient(135deg,var(--ac),var(--ac2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;}
+.hdr h1{font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:700;color:#fff;}
+.hdr p{font-size:11px;color:var(--mt);}
+.pbar{display:flex;align-items:center;gap:7px;}
+.ptabs{display:flex;background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:3px;gap:2px;}
+.ptab{padding:4px 11px;border-radius:5px;border:none;background:none;color:var(--mt);font-size:11px;font-weight:500;cursor:pointer;font-family:'Inter',sans-serif;transition:all .2s;}
+.ptab.active{background:var(--ac);color:#fff;}
+.ptab:hover:not(.active){color:var(--tx);}
+.nbtn{background:var(--s2);border:1px solid var(--bd);color:var(--tx);padding:4px 9px;border-radius:6px;cursor:pointer;font-size:12px;}
+.nbtn:disabled{opacity:.3;cursor:default;}
+.plbl{font-size:11px;font-weight:600;color:var(--tx);min-width:155px;text-align:center;}
+
+.main{padding:18px 22px;max-width:1440px;margin:0 auto;}
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:12px;}
+.loading p{color:var(--mt);font-size:13px;}
+.ov{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:11px;margin-bottom:18px;}
+.ovc{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:14px 12px;}
+.ovc .v{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;color:#fff;}
+.ovc .l{font-size:10px;color:var(--mt);margin-top:2px;text-transform:uppercase;letter-spacing:.05em;}
+.ovc .sub{font-size:10px;margin-top:4px;}
+.dtabs{display:flex;gap:3px;margin-bottom:18px;background:var(--s);border-radius:8px;padding:3px;width:fit-content;border:1px solid var(--bd);}
+.dtab{padding:6px 14px;border-radius:6px;cursor:pointer;font-size:11px;font-weight:500;color:var(--mt);border:none;background:none;font-family:'Inter',sans-serif;transition:all .2s;}
+.dtab.active{background:var(--ac);color:#fff;}
+.dtab:hover:not(.active){color:var(--tx);background:var(--s2);}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:15px;}
+.card{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;transition:border-color .2s,transform .15s;}
+.card:hover{border-color:var(--ac);transform:translateY(-2px);}
+.chdr{padding:14px 16px 11px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px;}
+.av{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--ac),var(--ac2));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;}
+.ai h3{font-size:13px;font-weight:600;color:#fff;}
+.ai p{font-size:10px;color:var(--mt);margin-top:1px;}
+.tbdg{margin-left:auto;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:600;display:flex;align-items:center;gap:3px;white-space:nowrap;}
+.t-up{background:rgba(34,197,94,.15);color:var(--gn);}
+.t-dn{background:rgba(239,68,68,.15);color:var(--rd);}
+.t-st{background:rgba(99,102,241,.15);color:#818cf8;}
+.t-warn{background:rgba(234,179,8,.15);color:var(--yl);}
+.cbody{padding:13px 16px;display:flex;flex-direction:column;gap:11px;}
+.mrow{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;}
+.met{background:var(--s2);border-radius:8px;padding:10px 7px;text-align:center;border:1px solid var(--bd);}
+.mv{font-size:17px;font-weight:700;color:#fff;font-family:'Space Grotesk',sans-serif;}
+.ml{font-size:9px;color:var(--mt);margin-top:2px;text-transform:uppercase;letter-spacing:.04em;}
+.wellness{background:var(--s2);border:1px solid var(--bd);border-radius:9px;padding:11px 12px;}
+.wellness-title{font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px;}
+.wellness-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.wmet{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.wmet-circle{width:50px;height:50px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;border:2px solid;}
+.wmet-v{font-size:14px;font-weight:700;}
+.wmet-u{font-size:8px;opacity:.7;}
+.wmet-l{font-size:9px;color:var(--mt);text-align:center;}
+.fatigue-row{display:flex;align-items:center;justify-content:space-between;margin-top:8px;}
+.fatigue-lbl{font-size:10px;color:var(--mt);}
+.fatigue-badge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+.f-fresh{background:rgba(34,197,94,.2);color:var(--gn);}
+.f-ok{background:rgba(59,130,246,.2);color:#60a5fa;}
+.f-warn{background:rgba(234,179,8,.2);color:var(--yl);}
+.f-tired{background:rgba(239,68,68,.2);color:var(--rd);}
+.bars{display:flex;flex-direction:column;gap:6px;}
+.brow{display:flex;align-items:center;gap:7px;}
+.blbl{font-size:10px;color:var(--mt);width:65px;flex-shrink:0;}
+.btrk{flex:1;height:5px;background:var(--s2);border-radius:3px;overflow:hidden;}
+.bfil{height:100%;border-radius:3px;transition:width .6s ease;}
+.bval{font-size:10px;font-weight:600;width:28px;text-align:right;}
+.minichart{height:65px;position:relative;}
+.alts{display:flex;flex-direction:column;gap:5px;}
+.al{display:flex;align-items:flex-start;gap:6px;padding:7px 9px;border-radius:7px;font-size:11px;line-height:1.4;}
+.al-warn{background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.2);color:#fde047;}
+.al-danger{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#fca5a5;}
+.al-ok{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.15);color:#86efac;}
+.al-i{flex-shrink:0;font-size:11px;}
+.aitxt{font-size:11px;color:var(--mt);line-height:1.6;padding:9px;background:var(--s2);border-radius:7px;border-left:3px solid var(--ac);}
+.csec{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:16px;margin-bottom:14px;}
+.csec h3{font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;color:#fff;margin-bottom:12px;}
+.cwrap{position:relative;height:190px;}
+.cnbox{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:18px;margin-bottom:18px;}
+.cnbox h3{font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:600;color:#fff;margin-bottom:4px;}
+.cnbox p{font-size:11px;color:var(--mt);margin-bottom:11px;line-height:1.5;}
+.cnlnk{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--ac),var(--ac2));border:none;color:#fff;padding:8px 14px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;transition:opacity .2s;}
+.cnlnk:hover{opacity:.85;}
+.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:var(--r);padding:14px;color:#fca5a5;font-size:12px;margin-bottom:14px;}
+.nodata{display:flex;flex-direction:column;align-items:center;gap:10px;padding:50px 20px;text-align:center;}
+.nodata h3{font-size:14px;font-weight:600;color:#fff;}
+.nodata p{font-size:12px;color:var(--mt);max-width:320px;line-height:1.6;}
+.src-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:600;background:var(--s2);border:1px solid var(--bd);color:var(--mt);}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--gn);color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:999;display:none;}
+@media(max-width:600px){.main{padding:12px;}.hdr{padding:10px 14px;}.grid{grid-template-columns:1fr;}.ov{grid-template-columns:repeat(2,1fr);}.pbar{flex-wrap:wrap;gap:5px;}}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════
+     PAGE COUREUR — visible par défaut
+═══════════════════════════════════════════ -->
+<div id="athletePage" class="athlete-page">
+
+  <!-- Écran principal coureur -->
+  <div id="aScreenAsk" class="athlete-card">
+    <div class="a-logo">🏃</div>
+    <div class="a-club">Nice Métropole Côte d'Azur — Pôle Performance</div>
+    <h1 class="a-title">Autorise l'accès à tes données</h1>
+    <p class="a-sub">Ton entraîneur souhaite accéder à tes données d'entraînement Nolio pour assurer ton suivi de performance.</p>
+    <div class="a-perms">
+      <div class="a-perms-title">Données accessibles</div>
+      <div class="a-perm"><div class="a-perm-icon">🏃</div>Séances et entraînements</div>
+      <div class="a-perm"><div class="a-perm-icon">💜</div>HRV / RMSSD (Whoop, Oura…)</div>
+      <div class="a-perm"><div class="a-perm-icon">😴</div>Sommeil et récupération</div>
+      <div class="a-perm"><div class="a-perm-icon">❤️</div>Fréquence cardiaque repos</div>
+      <div class="a-perm"><div class="a-perm-icon">⚡</div>Charge d'entraînement</div>
+    </div>
+    <a class="a-btn" id="authBtn" href="https://www.nolio.io/api/authorize/?response_type=code&client_id=LDiR5WZ4opOj8mURtmByci5MppyfqdvQEzp7Aye8&redirect_uri=https%3A%2F%2Fknechtnoah-afk.github.io%2Fnolio-coach%2F&state=athlete">🔗 Autoriser l'accès via Nolio</a>
+    <p class="a-note">Tu seras redirigé vers Nolio pour te connecter.<br>Tu peux révoquer l'accès à tout moment depuis <a href="https://www.nolio.io" target="_blank">nolio.io</a>.</p>
+    <div class="a-coach-link"><a href="#" onclick="showCoachLogin();return false;">Accès entraîneur</a></div>
+  </div>
+
+  <!-- Écran chargement coureur -->
+  <div id="aScreenLoad" class="athlete-card" style="display:none">
+    <div class="spin" style="border-top-color:#3b82f6;border-color:#e2e8f0;margin:20px auto"></div>
+    <p style="color:#64748b;font-size:14px;text-align:center" id="aLoadTxt">Connexion en cours...</p>
+  </div>
+
+  <!-- Écran succès coureur -->
+  <div id="aScreenOk" class="athlete-card" style="display:none;text-align:center">
+    <div class="a-success-icon">✅</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:#0f172a;margin-bottom:8px" id="aOkName">Connexion réussie !</div>
+    <p style="font-size:14px;color:#64748b;margin-bottom:20px">Tes données sont maintenant accessibles à ton entraîneur. Tu peux fermer cette page.</p>
+    <div class="a-success-badge">✓ Synchronisation active</div>
+  </div>
+
+  <!-- Écran erreur coureur -->
+  <div id="aScreenErr" class="athlete-card" style="display:none;text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">❌</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-size:20px;color:#0f172a;margin-bottom:8px">Erreur de connexion</h2>
+    <p style="font-size:14px;color:#64748b;margin-bottom:20px" id="aErrMsg">Une erreur s'est produite.</p>
+    <a class="a-btn" href="/">Réessayer</a>
+  </div>
+
+  <div class="a-footer">Pôle Performance · Nice Métropole Côte d'Azur · Powered by Nolio</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     PAGE COACH — cachée, protégée par mot de passe
+═══════════════════════════════════════════ -->
+<div id="coachPage" style="display:none">
+
+  <!-- Mot de passe -->
+  <div id="pwPage" class="pw-wrap">
+    <div class="pw-card">
+      <div style="font-size:40px;margin-bottom:14px">🔐</div>
+      <h2>Accès Entraîneur</h2>
+      <p>Espace réservé au staff technique</p>
+      <input class="pw-input" id="pwInput" type="password" placeholder="Mot de passe" onkeydown="if(event.key==='Enter')checkPw()"/>
+      <div class="pw-err" id="pwErr">Mot de passe incorrect</div>
+      <button class="pw-btn" onclick="checkPw()" style="margin-top:10px">Accéder →</button>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashPage" style="display:none">
+    <div class="hdr">
+      <div class="hdr-l">
+        <div class="logo">🏃</div>
+        <div><h1>Résumés Performance</h1><p>Nolio · Whoop · Oura · Suunto</p></div>
+      </div>
+      <div class="pbar" id="pbar">
+        <div class="ptabs">
+          <button class="ptab active" onclick="setPeriod('week')">Semaine</button>
+          <button class="ptab" onclick="setPeriod('month')">Mois</button>
+          <button class="ptab" onclick="setPeriod('quarter')">3 Mois</button>
+        </div>
+        <button class="nbtn" onclick="nav(-1)">‹</button>
+        <span class="plbl" id="plbl">—</span>
+        <button class="nbtn" onclick="nav(1)" id="nxtBtn">›</button>
+      </div>
+    </div>
+    <div class="main">
+      <div id="errBox" class="err" style="display:none"></div>
+      <div class="ov" id="ov"></div>
+      <div class="dtabs">
+        <button class="dtab active" onclick="setTab('all')" id="tabAll">Tous les coureurs</button>
+        <button class="dtab" onclick="setTab('alerts')" id="tabAlerts">⚠️ Vigilance <span id="alCnt"></span></button>
+        <button class="dtab" onclick="setTab('trends')" id="tabTrends">📈 Évolution</button>
+      </div>
+      <div id="cnBox"></div>
+      <div id="trendsDiv" style="display:none"></div>
+      <div class="grid" id="grid"></div>
+      <div class="nodata" id="noData" style="display:none">
+        <div style="font-size:34px">📭</div>
+        <h3>Aucune donnée</h3>
+        <p>Aucune séance sur cette période.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading coach -->
+  <div class="loading" id="loadScreen" style="display:none">
+    <div class="spin" style="border-color:var(--bd);border-top-color:var(--ac)"></div>
+    <p id="loadMsg">Chargement...</p>
+  </div>
+
+</div>
+
+<script>
+const CALLBACK_URL = location.origin + location.pathname;
+const CLIENT_ID = 'LDiR5WZ4opOj8mURtmByci5MppyfqdvQEzp7Aye8';
+const CLIENT_SECRET = 'Uvvoh9La99720QIFVPSLNHrRrfKAj6K3r3ZvlPUN9c8Dleghmxc9eGcGCUpyglKHVtZ7zV0YeNhON1YicYwlr3XigjyHmrmOi7mXT5Umgxfiok2A3E3yYvSOwQFU919R';
+const COACH_PW = 'EquipeNK';
+
+let cfg = {clientId: CLIENT_ID, clientSecret: CLIENT_SECRET};
+let tokens = {};
+let athletes = [];
+let summaries = {};
+let period = 'week', offset = 0, activeTab = 'all';
+let charts = {};
+
+// ── INIT ─────────────────────────────────────────────────────
+window.onload = async () => {
+  loadSt();
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  const isCoach = sessionStorage.getItem('nl_coach');
+
+  if (code) {
+    history.replaceState({}, '', location.pathname);
+    if (isCoach) {
+      // Callback depuis le dashboard coach
+      showCoachPage();
+      showCoachLoad('Connexion du coureur...');
+      await handleCb(code);
+      startDash();
+    } else {
+      // Callback depuis la page coureur
+      showAthletePage();
+      await handleAthleteCb(code);
+    }
+    return;
+  }
+
+  if (isCoach) {
+    showCoachPage();
+    startDash();
+  } else {
+    showAthletePage();
+  }
+};
+
+function showAthletePage() {
+  document.getElementById('athletePage').style.display = 'flex';
+  document.getElementById('coachPage').style.display = 'none';
+  // Construire lien auth pour coureur
+  const state = Math.random().toString(36).substring(2);
+  sessionStorage.setItem('oauth_state', state);
+  const p = new URLSearchParams({response_type:'code',client_id:CLIENT_ID,redirect_uri:CALLBACK_URL,state});
+  document.getElementById('authBtn').href = `https://www.nolio.io/api/authorize/?${p.toString()}`;
+}
+
+function showCoachPage() {
+  document.getElementById('athletePage').style.display = 'none';
+  document.getElementById('coachPage').style.display = 'block';
+}
+
+function showCoachLogin() {
+  showCoachPage();
+  document.getElementById('pwPage').style.display = 'flex';
+  document.getElementById('dashPage').style.display = 'none';
+  document.getElementById('loadScreen').style.display = 'none';
+}
+
+// ── MOT DE PASSE ─────────────────────────────────────────────
+function checkPw() {
+  const pw = document.getElementById('pwInput').value;
+  if (pw === COACH_PW) {
+    sessionStorage.setItem('nl_coach', '1');
+    document.getElementById('pwPage').style.display = 'none';
+    startDash();
+  } else {
+    document.getElementById('pwErr').style.display = 'block';
+    document.getElementById('pwInput').value = '';
+  }
+}
+
+// ── CALLBACK COUREUR ─────────────────────────────────────────
+function aShow(id) {
+  ['aScreenAsk','aScreenLoad','aScreenOk','aScreenErr'].forEach(s => {
+    document.getElementById(s).style.display = 'none';
+  });
+  document.getElementById(id).style.display = 'block';
+}
+
+async function handleAthleteCb(code) {
+  aShow('aScreenLoad');
+  document.getElementById('aLoadTxt').textContent = 'Finalisation de la connexion...';
+  try {
+    const creds = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+    const body = new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:CALLBACK_URL});
+    const r = await fetch('https://www.nolio.io/api/token/', {
+      method:'POST',
+      headers:{'Authorization':`Basic ${creds}`,'Content-Type':'application/x-www-form-urlencoded'},
+      body: body.toString()
+    });
+    if (!r.ok) throw new Error('Erreur ' + r.status);
+    const d = await r.json();
+
+    let name = 'Coureur', aid = String(Date.now());
+    try {
+      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
+      aid = String(user.id || Date.now());
+      name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Coureur';
+    } catch(e) {}
+
+    const existing = JSON.parse(localStorage.getItem('nl_tok') || '{}');
+    existing[aid] = {access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Date.now()+(d.expires_in||86400)*1000,name};
+    localStorage.setItem('nl_tok', JSON.stringify(existing));
+
+    document.getElementById('aOkName').textContent = `Bonjour ${name} ! 👋`;
+    aShow('aScreenOk');
+  } catch(e) {
+    document.getElementById('aErrMsg').textContent = e.message;
+    aShow('aScreenErr');
+  }
+}
+
+// ── CALLBACK COACH ────────────────────────────────────────────
+async function handleCb(code) {
+  try {
+    const creds = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+    const body = new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:CALLBACK_URL});
+    const r = await fetch('https://www.nolio.io/api/token/', {
+      method:'POST',
+      headers:{'Authorization':`Basic ${creds}`,'Content-Type':'application/x-www-form-urlencoded'},
+      body: body.toString()
+    });
+    if (!r.ok) throw new Error('Token exchange failed ' + r.status);
+    const d = await r.json();
+    let aid = String(Date.now()), name = `Coureur ${Object.keys(tokens).length + 1}`;
+    try {
+      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
+      aid = String(user.id || Date.now());
+      name = [user.first_name, user.last_name].filter(Boolean).join(' ') || name;
+    } catch(e) {}
+    tokens[aid] = {access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Date.now()+(d.expires_in||86400)*1000,name};
+    saveSt();
+    toast(`✅ ${name} connecté !`);
+  } catch(e) { toast('❌ ' + e.message, 'var(--rd)'); }
+}
+
+// ── STORAGE ───────────────────────────────────────────────────
+function loadSt() {
+  try { const t = localStorage.getItem('nl_tok'); if(t) tokens = JSON.parse(t); } catch(e) {}
+}
+function saveSt() { localStorage.setItem('nl_tok', JSON.stringify(tokens)); }
+
+function toast(msg, color='var(--gn)') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.background = color; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+// ── API ────────────────────────────────────────────────────────
+async function ag(url, tok) {
+  const r = await fetch(url, {headers:{'Authorization':`Bearer ${tok}`,'Accept':'application/json'}});
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+}
+async function refTok(aid) {
+  const t = tokens[aid]; if(!t) return null;
+  const creds = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+  const body = new URLSearchParams({grant_type:'refresh_token',refresh_token:t.refresh_token});
+  const r = await fetch('https://www.nolio.io/api/token/', {method:'POST',headers:{'Authorization':`Basic ${creds}`,'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
+  if (!r.ok) { delete tokens[aid]; saveSt(); return null; }
+  const d = await r.json();
+  tokens[aid] = {...tokens[aid],access_token:d.access_token,refresh_token:d.refresh_token,expires_at:Date.now()+(d.expires_in||86400)*1000};
+  saveSt(); return d.access_token;
+}
+async function getTok(aid) {
+  const t = tokens[aid]; if(!t) return null;
+  if (Date.now() < t.expires_at - 60000) return t.access_token;
+  return await refTok(aid);
+}
+
+// ── DATES ──────────────────────────────────────────────────────
+function getRange(p, off) {
+  const now = new Date(); let from, to;
+  if (p==='week') {
+    const dy=now.getDay(),df=dy===0?6:dy-1;
+    const mo=new Date(now);mo.setDate(now.getDate()-df+off*7);mo.setHours(0,0,0,0);
+    const su=new Date(mo);su.setDate(mo.getDate()+6);su.setHours(23,59,59,999);
+    from=mo;to=su;
+  } else if (p==='month') {
+    const d=new Date(now.getFullYear(),now.getMonth()+off,1);
+    from=new Date(d.getFullYear(),d.getMonth(),1);to=new Date(d.getFullYear(),d.getMonth()+1,0,23,59,59);
+  } else {
+    const qs=Math.floor(now.getMonth()/3)*3+off*3,yr=now.getFullYear()+Math.floor(qs/12),mo=((qs%12)+12)%12;
+    from=new Date(yr,mo,1);to=new Date(yr,mo+3,0,23,59,59);
+  }
+  return {from,to};
+}
+function fd(d) { return d.toISOString().split('T')[0]; }
+function fmtLbl(p,off) {
+  const {from,to}=getRange(p,off);
+  const fr=(d,l=false)=>d.toLocaleDateString('fr-FR',l?{day:'numeric',month:'long',year:'numeric'}:{day:'numeric',month:'short'});
+  if(p==='week')return `${fr(from)} – ${fr(to)}`;
+  if(p==='month')return from.toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
+  return `T${Math.floor(from.getMonth()/3)+1} ${from.getFullYear()}`;
+}
+
+// ── DASHBOARD ──────────────────────────────────────────────────
+function showCoachLoad(m) {
+  document.getElementById('pwPage').style.display='none';
+  document.getElementById('dashPage').style.display='none';
+  document.getElementById('loadScreen').style.display='flex';
+  document.getElementById('loadMsg').textContent=m;
+}
+function startDash() {
+  showCoachLoad('Chargement des données...');
+  updLbl(); loadAll();
+}
+function updLbl() {
+  document.getElementById('plbl').textContent=fmtLbl(period,offset);
+  document.getElementById('nxtBtn').disabled=offset>=0;
+}
+function setPeriod(p) {
+  period=p;offset=0;
+  document.querySelectorAll('.ptab').forEach(t=>t.classList.remove('active'));
+  event.target.classList.add('active');
+  updLbl();showCoachLoad('Chargement...');loadAll();
+}
+function nav(d){offset+=d;if(offset>0)offset=0;updLbl();showCoachLoad('Chargement...');loadAll();}
+function setTab(t) {
+  activeTab=t;
+  document.querySelectorAll('.dtab').forEach(x=>x.classList.remove('active'));
+  document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.add('active');
+  document.getElementById('trendsDiv').style.display=t==='trends'?'block':'none';
+  document.getElementById('grid').style.display=t==='trends'?'none':'grid';
+  if(t==='trends')renderTrends();else renderCards();
+}
+
+// ── LOAD DATA ──────────────────────────────────────────────────
+async function loadAll() {
+  try {
+    const ids=Object.keys(tokens); athletes=[];summaries={};
+    if(ids.length>0){
+      const tok=await getTok(ids[0]);
+      if(tok){
+        try{const l=await ag('https://www.nolio.io/api/get/athletes/?wants_coach=false',tok);athletes=Array.isArray(l)?l:[];}
+        catch(e){for(const id of ids){try{athletes.push({nolio_id:id,name:tokens[id].name||`Coureur ${id}`});}catch(e2){}}}
+      }
+    }
+    const {from,to}=getRange(period,offset);
+    const {from:pf,to:pt}=getRange(period,offset-1);
+    const lim=period==='quarter'?200:period==='month'?100:30;
+    await Promise.all(ids.map(async aid=>{
+      try{
+        const tok=await getTok(aid);if(!tok)return;
+        const[cur,prev,rmssd]=await Promise.all([
+          ag(`https://www.nolio.io/api/get/training/?from=${fd(from)}&to=${fd(to)}&limit=${lim}`,tok).catch(()=>[]),
+          ag(`https://www.nolio.io/api/get/training/?from=${fd(pf)}&to=${fd(pt)}&limit=${lim}`,tok).catch(()=>[]),
+          ag(`https://www.nolio.io/api/get/hrv/rmssd/?from=${fd(from)}&to=${fd(to)}&limit=90`,tok).catch(()=>[])
+        ]);
+        let sleepVal=null,hrVal=null;
+        try{const sm=await ag('https://www.nolio.io/api/get/metric/?id=1',tok);if(sm&&sm.value)sleepVal=sm.value/3600;}catch(e){}
+        try{const hm=await ag('https://www.nolio.io/api/get/metric/?id=9',tok);if(hm&&hm.value)hrVal=hm.value;}catch(e){}
+        if(!hrVal&&Array.isArray(cur)&&cur.length>0&&cur[0].rest_hr_user)hrVal=cur[0].rest_hr_user;
+        summaries[aid]=buildSum(aid,cur||[],prev||[],rmssd||[],sleepVal,hrVal);
+      }catch(e){console.error(aid,e);}
+    }));
+    await genAI();
+    renderDash();
+  }catch(e){document.getElementById('errBox').textContent='Erreur : '+e.message;document.getElementById('errBox').style.display='block';document.getElementById('loadScreen').style.display='none';document.getElementById('dashPage').style.display='block';}
+}
+
+function buildSum(aid,w,pw,rmssd,avgSleep,restHR){
+  const s=arr=>({dist:arr.reduce((s,x)=>s+(x.distance||0),0),dur:arr.reduce((s,x)=>s+(x.duration||0),0)/3600,load:arr.reduce((s,x)=>s+(x.load_foster||0),0),rpes:arr.filter(x=>x.rpe).map(x=>x.rpe),feel:arr.filter(x=>x.feeling).map(x=>x.feeling),n:arr.length});
+  const cur=s(w),prev=s(pw);
+  const avg=arr=>arr.length?arr.reduce((a,b)=>a+b)/arr.length:null;
+  const avgRpe=avg(cur.rpes),avgFeel=avg(cur.feel);
+  const volTrend=prev.dist>0?(cur.dist-prev.dist)/prev.dist*100:0;
+  const loadTrend=prev.load>0?(cur.load-prev.load)/prev.load*100:0;
+  const pace=cur.dist>0&&cur.dur>0?cur.dur/cur.dist*60:null,pPace=prev.dist>0&&prev.dur>0?prev.dur/prev.dist*60:null;
+  const perfTrend=pace&&pPace?pPace-pace:0;
+  const rmssdVals=Array.isArray(rmssd)?rmssd.filter(x=>x.value>0).map(x=>x.value):[];
+  const avgRmssd=avg(rmssdVals);
+  const rmssdTrend=rmssdVals.length>=2?rmssdVals[0]-rmssdVals[rmssdVals.length-1]:0;
+  const rmssdSources=[...new Set((Array.isArray(rmssd)?rmssd:[]).map(x=>x.source).filter(Boolean))];
+  let fs=50;
+  if(avgRmssd!==null){if(rmssdTrend<-5)fs-=20;else if(rmssdTrend<0)fs-=8;else if(rmssdTrend>5)fs+=15;else if(rmssdTrend>0)fs+=5;}
+  if(avgSleep!==null){if(avgSleep<6)fs-=25;else if(avgSleep<7)fs-=12;else if(avgSleep>=8)fs+=10;}
+  if(avgRpe!==null){if(avgRpe>8)fs-=15;else if(avgRpe>6)fs-=5;else if(avgRpe<5)fs+=8;}
+  if(avgFeel!==null){if(avgFeel<3)fs-=15;else if(avgFeel<4)fs-=5;else if(avgFeel>=4)fs+=8;}
+  if(loadTrend>35)fs-=15;else if(loadTrend>20)fs-=8;
+  fs=Math.max(0,Math.min(100,fs));
+  const fl=fs>=70?'Forme optimale':fs>=50?'En forme':fs>=30?'Vigilance':'Fatigué';
+  const fc=fs>=70?'f-fresh':fs>=50?'f-ok':fs>=30?'f-warn':'f-tired';
+  const alerts=[];
+  if(cur.n===0)alerts.push({type:'warn',msg:'Aucune séance enregistrée'});
+  const lr=prev.load>0?cur.load/prev.load:1;
+  if(lr>1.35)alerts.push({type:'danger',msg:`Charge +${Math.round((lr-1)*100)}% vs période préc.`});
+  else if(lr>1.2)alerts.push({type:'warn',msg:`Charge +${Math.round((lr-1)*100)}% — surveiller`});
+  if(avgRpe!==null&&avgRpe>8)alerts.push({type:'warn',msg:`RPE élevé (${avgRpe.toFixed(1)}/10)`});
+  if(avgFeel!==null&&avgFeel<3)alerts.push({type:'danger',msg:`Sensations basses (${avgFeel.toFixed(1)}/5)`});
+  if(avgSleep!==null&&avgSleep<6)alerts.push({type:'danger',msg:`Sommeil insuffisant (${avgSleep.toFixed(1)}h)`});
+  else if(avgSleep!==null&&avgSleep<7)alerts.push({type:'warn',msg:`Sommeil court (${avgSleep.toFixed(1)}h/nuit)`});
+  if(avgRmssd!==null&&rmssdTrend<-8)alerts.push({type:'danger',msg:`RMSSD en baisse — fatigue végétative`});
+  else if(avgRmssd!==null&&rmssdTrend<-3)alerts.push({type:'warn',msg:'RMSSD légèrement en baisse'});
+  if(avgRmssd!==null&&rmssdTrend>5)alerts.push({type:'ok',msg:'RMSSD en hausse — bonne récupération'});
+  if(perfTrend>0.5)alerts.push({type:'ok',msg:`Allure +${Math.abs(perfTrend).toFixed(1)} sec/km`});
+  if(perfTrend<-1)alerts.push({type:'warn',msg:`Régression allure ${Math.abs(perfTrend).toFixed(1)} sec/km`});
+  return{aid,n:cur.n,dist:Math.round(cur.dist*10)/10,dur:Math.round(cur.dur*10)/10,load:Math.round(cur.load),avgRpe,avgFeel,volTrend,loadTrend,perfTrend,avgRmssd,rmssdTrend,rmssdSources,rmssdVals,avgSleep,restHR,fatigueScore:fs,fatigueLvl:fl,fatigueClass:fc,alerts,prevDist:Math.round(prev.dist*10)/10,prevLoad:Math.round(prev.load),aiSummary:null};
+}
+
+async function genAI(){
+  const ids=Object.keys(summaries);if(!ids.length)return;
+  const lbl=fmtLbl(period,offset),pl={week:'semaine',month:'mois',quarter:'trimestre'}[period];
+  await Promise.all(ids.map(async aid=>{
+    const s=summaries[aid];
+    const ath=athletes.find(a=>String(a.nolio_id)===String(aid));
+    const name=ath?ath.name:(tokens[aid]?.name||`Coureur ${aid}`);
+    try{
+      const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:`Tu es analyste performance pour un entraîneur de running. Données du ${pl} (${lbl}) pour ${name} : Séances:${s.n} | Distance:${s.dist}km (${s.volTrend>0?'+':''}${Math.round(s.volTrend)}%) | Charge:${s.load} | RPE:${s.avgRpe!==null?s.avgRpe.toFixed(1)+'/10':'nd'} | Sensation:${s.avgFeel!==null?s.avgFeel.toFixed(1)+'/5':'nd'} | RMSSD:${s.avgRmssd!==null?s.avgRmssd.toFixed(1)+'ms':'nd'} (tendance ${s.rmssdTrend>0?'+':''}${s.rmssdTrend.toFixed(1)}ms) | Sommeil:${s.avgSleep!==null?s.avgSleep.toFixed(1)+'h':'nd'} | FC repos:${s.restHR!==null?s.restHR+'bpm':'nd'} | Score forme:${s.fatigueScore}/100 | Vigilances:${s.alerts.filter(a=>a.type!=='ok').map(a=>a.msg).join('; ')||'aucune'}. Résumé 3-4 phrases max en français, direct et factuel pour l'entraîneur.`}]})});
+      if(r.ok){const d=await r.json();summaries[aid].aiSummary=d.content?.find(b=>b.type==='text')?.text||'';}
+    }catch(e){}
+  }));
+}
+
+function renderDash(){
+  document.getElementById('loadScreen').style.display='none';
+  document.getElementById('dashPage').style.display='block';
+  renderOv();renderCn();
+  if(activeTab==='trends')renderTrends();else renderCards();
+}
+function renderOv(){
+  const ids=Object.keys(summaries);
+  const tA=ids.reduce((s,id)=>s+summaries[id].alerts.filter(a=>a.type!=='ok').length,0);
+  const tK=ids.reduce((s,id)=>s+summaries[id].dist,0);
+  const aR=ids.length?ids.reduce((s,id)=>s+(summaries[id].avgRmssd||0),0)/ids.length:0;
+  const fat=ids.filter(id=>summaries[id].fatigueScore<30).length;
+  const pl={week:'semaine',month:'mois',quarter:'trimestre'}[period];
+  document.getElementById('alCnt').textContent=tA>0?`(${tA})`:'';
+  document.getElementById('ov').innerHTML=`
+    <div class="ovc"><div class="v">${ids.length}</div><div class="l">Coureurs</div><div class="sub" style="color:var(--mt)">${athletes.length} au total</div></div>
+    <div class="ovc"><div class="v" style="color:${tA>0?'var(--or)':'var(--gn)'}">${tA}</div><div class="l">Vigilances</div><div class="sub" style="color:var(--mt)">ce ${pl}</div></div>
+    <div class="ovc"><div class="v">${tK.toFixed(0)}</div><div class="l">km équipe</div></div>
+    <div class="ovc"><div class="v" style="color:${aR>50?'var(--gn)':aR>35?'var(--yl)':'var(--rd)'}">${aR>0?aR.toFixed(0)+'ms':'—'}</div><div class="l">RMSSD moy.</div></div>
+    <div class="ovc"><div class="v" style="color:${fat>0?'var(--rd)':'var(--gn)'}">${fat}</div><div class="l">Fatigués</div></div>`;
+}
+function renderCn(){
+  const ci=Object.keys(tokens);
+  document.getElementById('cnBox').innerHTML=`<div class="cnbox"><h3>🔗 Coureurs connectés : ${ci.length}</h3><p>Envoie ce lien à tes coureurs pour qu'ils autorisent l'accès : <strong>${CALLBACK_URL}</strong></p></div>`;
+}
+function renderCards(){
+  const grid=document.getElementById('grid');
+  let ids=Object.keys(summaries);
+  if(activeTab==='alerts')ids=ids.filter(id=>summaries[id].alerts.some(a=>a.type!=='ok'));
+  ids.sort((a,b)=>summaries[a].fatigueScore-summaries[b].fatigueScore);
+  document.getElementById('noData').style.display=ids.length===0&&Object.keys(summaries).length>0?'flex':'none';
+  grid.innerHTML=ids.map(aid=>cardHTML(aid)).join('');
+  ids.forEach(aid=>{const s=summaries[aid];if(s.rmssdVals&&s.rmssdVals.length>2)mkChart(aid,s.rmssdVals);});
+}
+function cardHTML(aid){
+  const s=summaries[aid];
+  const ath=athletes.find(a=>String(a.nolio_id)===String(aid));
+  const name=ath?ath.name:(tokens[aid]?.name||`Coureur ${aid}`);
+  const ini=name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+  const tc=s.fatigueScore>=70?'t-up':s.fatigueScore>=50?'t-st':s.fatigueScore>=30?'t-warn':'t-dn';
+  const volC=Math.abs(s.volTrend)>30?'var(--or)':'var(--mt)';
+  const pl={week:'S-1',month:'M-1',quarter:'T-1'}[period];
+  const rpeC=s.avgRpe===null?'#64748b':s.avgRpe>8?'var(--rd)':s.avgRpe>6?'var(--or)':'var(--gn)';
+  const feelC=s.avgFeel===null?'#64748b':s.avgFeel<3?'var(--rd)':s.avgFeel<4?'var(--or)':'var(--gn)';
+  const rmssdC=s.avgRmssd===null?'#64748b':s.avgRmssd>60?'var(--gn)':s.avgRmssd>40?'var(--yl)':'var(--rd)';
+  const rmssdTStr=s.rmssdTrend>0?`↑ +${s.rmssdTrend.toFixed(1)}ms`:s.rmssdTrend<0?`↓ ${s.rmssdTrend.toFixed(1)}ms`:'→';
+  const rmssdTC=s.rmssdTrend>3?'var(--gn)':s.rmssdTrend<-3?'var(--rd)':'var(--mt)';
+  const sleepC=s.avgSleep===null?'#64748b':s.avgSleep<6?'var(--rd)':s.avgSleep<7?'var(--or)':'var(--gn)';
+  const hrC=s.restHR===null?'#64748b':s.restHR>70?'var(--or)':s.restHR>60?'var(--yl)':'var(--gn)';
+  const srcB=s.rmssdSources.map(src=>`<span class="src-badge">📡 ${src}</span>`).join(' ');
+  const alH=s.alerts.map(a=>`<div class="al al-${a.type}"><span class="al-i">${a.type==='danger'?'🔴':a.type==='warn'?'⚠️':'✅'}</span><span>${a.msg}</span></div>`).join('');
+  const rcH=s.rmssdVals.length>2?`<div class="minichart"><canvas id="rc_${aid}"></canvas></div>`:'';
+  return`<div class="card"><div class="chdr"><div class="av">${ini}</div><div class="ai"><h3>${name}</h3><p>${s.n} séance${s.n>1?'s':''} · ${s.dist} km · <span style="color:${volC}">${s.volTrend>0?'+':''}${Math.round(s.volTrend)}% vs ${pl}</span></p></div><div class="tbdg ${tc}">${s.fatigueLvl}</div></div><div class="cbody"><div class="mrow"><div class="met"><div class="mv">${s.dist}</div><div class="ml">km</div></div><div class="met"><div class="mv">${s.dur}</div><div class="ml">heures</div></div><div class="met"><div class="mv">${s.load}</div><div class="ml">charge</div></div></div><div class="wellness"><div class="wellness-title">🩺 Récupération & Bien-être</div><div class="wellness-grid"><div class="wmet"><div class="wmet-circle" style="border-color:${rmssdC};color:${rmssdC}"><span class="wmet-v">${s.avgRmssd!==null?Math.round(s.avgRmssd):'—'}</span><span class="wmet-u">ms</span></div><span class="wmet-l">RMSSD<br><span style="color:${rmssdTC};font-size:9px">${s.avgRmssd!==null?rmssdTStr:''}</span></span></div><div class="wmet"><div class="wmet-circle" style="border-color:${sleepC};color:${sleepC}"><span class="wmet-v">${s.avgSleep!==null?s.avgSleep.toFixed(1):'—'}</span><span class="wmet-u">h</span></div><span class="wmet-l">Sommeil</span></div><div class="wmet"><div class="wmet-circle" style="border-color:${hrC};color:${hrC}"><span class="wmet-v">${s.restHR!==null?s.restHR:'—'}</span><span class="wmet-u">bpm</span></div><span class="wmet-l">FC repos</span></div></div>${srcB?`<div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${srcB}</div>`:''}<div class="fatigue-row"><span class="fatigue-lbl">Score forme</span><span class="fatigue-badge ${s.fatigueClass}">${s.fatigueScore}/100 — ${s.fatigueLvl}</span></div><div style="height:5px;background:var(--s);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${s.fatigueScore}%;background:${s.fatigueScore>=70?'var(--gn)':s.fatigueScore>=50?'var(--ac)':s.fatigueScore>=30?'var(--yl)':'var(--rd)'};border-radius:3px;transition:width .6s"></div></div></div><div class="bars"><div class="brow"><span class="blbl">RPE moyen</span><div class="btrk"><div class="bfil" style="width:${s.avgRpe?s.avgRpe*10:0}%;background:${rpeC}"></div></div><span class="bval" style="color:${rpeC}">${s.avgRpe!==null?s.avgRpe.toFixed(1):'—'}</span></div><div class="brow"><span class="blbl">Sensation</span><div class="btrk"><div class="bfil" style="width:${s.avgFeel?s.avgFeel*20:0}%;background:${feelC}"></div></div><span class="bval" style="color:${feelC}">${s.avgFeel!==null?s.avgFeel.toFixed(1)+'/5':'—'}</span></div></div>${rcH}${alH?`<div class="alts">${alH}</div>`:''}${s.aiSummary?`<div class="aitxt">${s.aiSummary}</div>`:''}</div></div>`;
+}
+function mkChart(aid,vals){
+  const ctx=document.getElementById(`rc_${aid}`);if(!ctx)return;
+  if(charts[aid])charts[aid].destroy();
+  const rev=[...vals].reverse();
+  charts[aid]=new Chart(ctx,{type:'line',data:{labels:rev.map((_,i)=>i+1),datasets:[{data:rev,borderColor:'rgba(99,102,241,.8)',backgroundColor:'rgba(99,102,241,.1)',borderWidth:1.5,pointRadius:2,fill:true,tension:.3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{ticks:{color:'#64748b',font:{size:8},callback:v=>v+'ms'},grid:{color:'rgba(42,51,71,.4)'}}}}});
+}
+function renderTrends(){
+  const ids=Object.keys(summaries);
+  if(!ids.length){document.getElementById('trendsDiv').innerHTML='<div class="nodata"><h3>Aucune donnée</h3></div>';return;}
+  const labels=ids.map(id=>{const a=athletes.find(x=>String(x.nolio_id)===String(id));return a?a.name.split(' ')[0]:(tokens[id]?.name?.split(' ')[0]||`#${id}`);});
+  document.getElementById('trendsDiv').innerHTML=`<div class="csec"><h3>📏 Distance (km)</h3><div class="cwrap"><canvas id="cD"></canvas></div></div><div class="csec"><h3>⚡ Charge Foster</h3><div class="cwrap"><canvas id="cL"></canvas></div></div><div class="csec"><h3>💜 RMSSD moyen (ms)</h3><div class="cwrap"><canvas id="cR"></canvas></div></div><div class="csec"><h3>😴 Sommeil moyen (h)</h3><div class="cwrap"><canvas id="cS"></canvas></div></div><div class="csec"><h3>🩺 Score forme (/100)</h3><div class="cwrap"><canvas id="cF"></canvas></div></div>`;
+  const o=(l)=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#94a3b8',font:{size:10},callback:v=>v+l},grid:{color:'rgba(42,51,71,.5)'}}}});
+  new Chart(document.getElementById('cD'),{type:'bar',data:{labels,datasets:[{data:ids.map(id=>summaries[id].dist),backgroundColor:'rgba(59,130,246,.6)',borderRadius:5}]},options:o('km')});
+  new Chart(document.getElementById('cL'),{type:'bar',data:{labels,datasets:[{data:ids.map(id=>summaries[id].load),backgroundColor:'rgba(99,102,241,.6)',borderRadius:5}]},options:o('')});
+  const rd=ids.map(id=>summaries[id].avgRmssd||0);
+  new Chart(document.getElementById('cR'),{type:'bar',data:{labels,datasets:[{data:rd,backgroundColor:rd.map(v=>v>60?'rgba(34,197,94,.6)':v>40?'rgba(234,179,8,.6)':'rgba(239,68,68,.6)'),borderRadius:5}]},options:o('ms')});
+  const sd=ids.map(id=>summaries[id].avgSleep||0);
+  new Chart(document.getElementById('cS'),{type:'bar',data:{labels,datasets:[{data:sd,backgroundColor:sd.map(v=>v>=8?'rgba(34,197,94,.6)':v>=7?'rgba(59,130,246,.6)':v>=6?'rgba(234,179,8,.6)':'rgba(239,68,68,.6)'),borderRadius:5}]},options:o('h')});
+  const fd2=ids.map(id=>summaries[id].fatigueScore);
+  new Chart(document.getElementById('cF'),{type:'bar',data:{labels,datasets:[{data:fd2,backgroundColor:fd2.map(v=>v>=70?'rgba(34,197,94,.6)':v>=50?'rgba(59,130,246,.6)':v>=30?'rgba(234,179,8,.6)':'rgba(239,68,68,.6)'),borderRadius:5}]},options:o('')});
+}
+</script>
+</body>
+</html>
