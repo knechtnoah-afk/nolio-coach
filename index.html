@@ -1266,9 +1266,9 @@ function renderModal(aid,name,allWorkouts,intensityWorkouts,enduranceWorkouts,fo
   // Watts / FC (séances intensité)
   const powerHTML=hasPower?`
     <div class="csec" style="margin-bottom:16px">
-      <h3>⚡ Watts vs FC — Séances intensité (Seuil/PMA/Sprint)</h3>
+      <h3>💜 Efficacité cardiaque vs Fatigue (TSS)</h3>
+      <p style="font-size:10px;color:var(--mt);margin:-4px 0 10px">NP ÷ FC moyenne × 10 — point violet = au-dessus de sa moyenne (bon), rouge = en dessous. Si l'efficacité baisse quand le TSS monte → fatigue réelle.</p>
       <div class="cwrap"><canvas id="m_pwr_${aid}"></canvas></div>
-      ${s?.restHR&&s?.avgNP?`<div style="font-size:10px;color:var(--mt);margin-top:6px">Ratio NP/FC repos : <strong style="color:${(s.avgNP/s.restHR)>2?'var(--gn)':'var(--or)'}">${(s.avgNP/s.restHR).toFixed(2)}</strong></div>`:''}
     </div>`:'';
 
   // Séances intensité
@@ -1438,13 +1438,76 @@ function renderFormeChart(aid, formeCurve) {
 function renderPowerChart(aid, workouts, restHR) {
   const ctx=document.getElementById(`m_pwr_${aid}`);if(!ctx)return;
   const k=`m_pwr_${aid}`;if(charts[k])charts[k].destroy();
-  const labels=workouts.filter(w=>w.np).map(w=>new Date(w.date_start).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}));
-  const npData=workouts.filter(w=>w.np).map(w=>Math.round(w.np));
-  const ftpData=workouts.filter(w=>w.np).map(w=>w.ftp?Math.round(w.ftp):null);
-  const datasets=[{label:'NP (W)',data:npData,borderColor:'rgba(167,139,250,.9)',backgroundColor:'rgba(167,139,250,.2)',borderWidth:2,pointRadius:4,tension:.3}];
-  if(ftpData.some(x=>x!==null)) datasets.push({label:'FTP (W)',data:ftpData,borderColor:'rgba(251,191,36,.7)',backgroundColor:'transparent',borderWidth:1,pointRadius:3,borderDash:[5,5],tension:.3});
-  if(restHR) datasets.push({label:`FC repos x2 (${restHR*2})`,data:workouts.filter(w=>w.np).map(()=>restHR*2),borderColor:'rgba(248,113,113,.4)',backgroundColor:'transparent',borderWidth:1,borderDash:[3,6],pointRadius:0});
-  charts[k]=new Chart(ctx,{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',font:{size:9}}}},scales:{x:{ticks:{color:'#64748b',font:{size:8}},grid:{display:false}},y:{ticks:{color:'#94a3b8',font:{size:8},callback:v=>v+'W'},grid:{color:'rgba(42,51,71,.4)'}}}}});
+  // ── INDICE D'EFFICACITÉ CARDIAQUE ──────────────────────────────────
+  // EF = NP / FC_moy × 100  (plus c'est haut = cœur travaille moins pour même puissance)
+  // Couplé au TSS pour estimer si la fatigue affecte l'efficacité :
+  // si EF baisse alors que TSS s'accumule → fatigue réelle
+  const valid=workouts.filter(w=>w.np&&w.np>0&&w.avg_hr&&w.avg_hr>0);
+  if(!valid.length){
+    const c=document.getElementById(`m_pwr_${aid}`);
+    if(c)c.parentElement.innerHTML='<p style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Pas de données NP+FC disponibles pour calculer l\'efficacité cardiaque.</p>';
+    return;
+  }
+  const labels=valid.map(w=>new Date(w.date_start).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}));
+  const efData=valid.map(w=>Math.round((w.np/w.avg_hr)*100)/10); // ×10 pour lisibilité
+  const tssData=valid.map(w=>{
+    // TSS estimé si non dispo : (durée_sec × NP² / FTP²) / 3600 × 100
+    if(w.tss) return Math.round(w.tss);
+    const ftp=w.ftp||260;
+    return Math.round((w.duration*(w.np/ftp)**2)/36);
+  });
+  // Moyenne EF pour ligne de référence
+  const avgEF=Math.round(efData.reduce((a,b)=>a+b)/efData.length*10)/10;
+  charts[k]=new Chart(ctx,{
+    type:'line',
+    data:{labels,datasets:[
+      {
+        label:'Efficacité cardiaque (NP/FC×10)',
+        data:efData,
+        borderColor:'rgba(167,139,250,.9)',
+        backgroundColor:'rgba(167,139,250,.15)',
+        borderWidth:2,pointRadius:5,fill:true,tension:.3,yAxisID:'y',
+        pointBackgroundColor:efData.map(v=>v>=avgEF?'#a78bfa':'#f87171')
+      },
+      {
+        label:'TSS estimé',
+        data:tssData,
+        borderColor:'rgba(251,191,36,.6)',
+        backgroundColor:'transparent',
+        borderWidth:1.5,pointRadius:3,borderDash:[4,4],tension:.3,yAxisID:'y2'
+      },
+      {
+        label:`Référence (moy. ${avgEF})`,
+        data:labels.map(()=>avgEF),
+        borderColor:'rgba(167,139,250,.3)',
+        backgroundColor:'transparent',
+        borderWidth:1,pointRadius:0,borderDash:[2,6],yAxisID:'y'
+      }
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{labels:{color:'#94a3b8',font:{size:9}}},
+        tooltip:{callbacks:{
+          afterBody:(items)=>{
+            const i=items[0].dataIndex;
+            const ef=efData[i];
+            const tss=tssData[i];
+            const delta=Math.round((ef-avgEF)*10)/10;
+            if(tss>100&&delta<0) return['⚠️ Efficacité basse avec TSS élevé → fatigue'];
+            if(tss<60&&delta>0) return['✅ Bonne efficacité sur séance légère'];
+            if(delta>0) return[`+${delta} vs moyenne → bonne forme`];
+            return[`${delta} vs moyenne → surveillance`];
+          }
+        }}
+      },
+      scales:{
+        x:{ticks:{color:'#64748b',font:{size:8}},grid:{display:false}},
+        y:{position:'left',title:{display:true,text:'Efficacité (NP/FC×10)',color:'#a78bfa',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{color:'rgba(42,51,71,.4)'}},
+        y2:{position:'right',title:{display:true,text:'TSS',color:'#fbbf24',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{display:false}}
+      }
+    }
+  });
 }
 
 function renderCPChart(aid, cpPoints, cp, wPrime) {
@@ -1487,35 +1550,92 @@ async function loadLaps(aid,idx,nolioId,tok){
       html+=`<div style="margin-bottom:8px">${data.tags.map(t=>`<span style="font-size:9px;background:rgba(167,139,250,.15);color:#a78bfa;padding:2px 7px;border-radius:10px;margin-right:4px">#${t}</span>`).join('')}</div>`;
     }
     if(data.laps&&data.laps.length>0){
-      html+=`<div style="font-size:10px;font-weight:600;color:var(--mt);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">🎯 ${data.laps.length} intervalles / répétitions</div>`;
-      html+=`<div style="display:flex;flex-direction:column;gap:4px">`;
       const streams=data.streams||[];
-      data.laps.forEach((lap,li)=>{
-        const lapDist=lap.distance?(lap.distance/1000).toFixed(2)+'km':'';
-        const lapDur=lap.duration?`${lap.duration}s`:'';
-        // Croiser avec les streams pour watts/FC moyens sur l'intervalle
-        let avgWatts=null, avgHr=null;
+      // Enrichir chaque lap avec watts/FC moyens depuis les streams
+      const enrichedLaps=data.laps.map((lap,li)=>{
+        let avgWatts=null,avgHr=null;
         if(streams.length>0&&lap.start!==undefined&&lap.end!==undefined){
-          const segment=streams.slice(lap.start,lap.end+1);
-          const wattsVals=segment.filter(s=>s.watts!==undefined&&s.watts!==null).map(s=>s.watts);
-          const hrVals=segment.filter(s=>s.heartrate!==undefined&&s.heartrate!==null).map(s=>s.heartrate);
-          if(wattsVals.length>0) avgWatts=Math.round(wattsVals.reduce((a,b)=>a+b,0)/wattsVals.length);
-          if(hrVals.length>0) avgHr=Math.round(hrVals.reduce((a,b)=>a+b,0)/hrVals.length);
+          const seg=streams.slice(lap.start,lap.end+1);
+          const wv=seg.filter(s=>s.watts!=null).map(s=>s.watts);
+          const hv=seg.filter(s=>s.heartrate!=null).map(s=>s.heartrate);
+          if(wv.length>0) avgWatts=Math.round(wv.reduce((a,b)=>a+b)/wv.length);
+          if(hv.length>0) avgHr=Math.round(hv.reduce((a,b)=>a+b)/hv.length);
         }
-        html+=`<div style="display:flex;align-items:center;gap:8px;background:#161b25;padding:7px 10px;border-radius:6px;font-size:11px">
-          <span style="color:#a78bfa;font-weight:600;min-width:18px">${li+1}</span>
-          <span style="color:#fff;flex:1">${lap.name||'Répétition '+(li+1)}</span>
-          ${lapDist?`<span style="color:var(--mt)">${lapDist}</span>`:''}
-          ${lapDur?`<span style="color:var(--mt)">${lapDur}</span>`:''}
-          ${avgWatts?`<span style="color:#a78bfa;font-weight:600">${avgWatts}W</span>`:''}
-          ${avgHr?`<span style="color:#f87171;font-weight:600">${avgHr}bpm</span>`:''}
-          ${!avgWatts&&!avgHr?'<span style="color:var(--mt);font-size:9px">pas de données FC/watts</span>':''}
-        </div>`;
+        return{...lap,avgWatts,avgHr,idx:li};
       });
-      html+=`</div>`;
+
+      // ── DÉTECTION DE PATTERNS ─────────────────────────────────────
+      // Regrouper les laps similaires : même durée ±10% ET mêmes watts ±8%
+      const similar=(a,b)=>{
+        const durOk=!a.duration||!b.duration||Math.abs(a.duration-b.duration)/Math.max(a.duration,b.duration)<0.10;
+        const wOk=!a.avgWatts||!b.avgWatts||Math.abs(a.avgWatts-b.avgWatts)/Math.max(a.avgWatts,b.avgWatts)<0.08;
+        return durOk&&wOk;
+      };
+
+      // Alternance effort/récup : chercher si les laps alternent haute/basse intensité
+      const isHigh=lap=>lap.avgWatts&&lap.avgWatts>200;
+      const hasAlternation=enrichedLaps.length>=4&&enrichedLaps.slice(0,6).some((l,i)=>i>0&&isHigh(l)!==isHigh(enrichedLaps[i-1]));
+
+      if(hasAlternation){
+        // Séparer efforts et récups
+        const efforts=enrichedLaps.filter(l=>isHigh(l));
+        const recups=enrichedLaps.filter(l=>!isHigh(l));
+        const avgEffortW=efforts.length?Math.round(efforts.reduce((s,l)=>s+(l.avgWatts||0),0)/efforts.length):null;
+        const avgEffortHr=efforts.length?Math.round(efforts.reduce((s,l)=>s+(l.avgHr||0),0)/efforts.length):null;
+        const avgEffortDur=efforts.length?Math.round(efforts.reduce((s,l)=>s+(l.duration||0),0)/efforts.length):null;
+        const avgRecupDur=recups.length?Math.round(recups.reduce((s,l)=>s+(l.duration||0),0)/recups.length):null;
+        const nReps=efforts.length;
+        // Variance de la puissance sur les efforts pour voir si l'athlète maintient
+        const wVals=efforts.map(l=>l.avgWatts).filter(Boolean);
+        const wMean=wVals.reduce((a,b)=>a+b,0)/wVals.length;
+        const wStd=wVals.length>1?Math.round(Math.sqrt(wVals.reduce((s,v)=>s+(v-wMean)**2,0)/wVals.length)):0;
+        const repQuality=wStd<wMean*0.05?'✅ Très régulier':wStd<wMean*0.10?'🟡 Régulier':wStd<wMean*0.15?'🟠 Irrégulier':'🔴 Très irrégulier';
+        html+=`<div style="background:#161b25;border-radius:8px;padding:12px;margin-bottom:8px">
+          <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:6px">
+            ${nReps} × ${avgEffortDur?avgEffortDur+'s':''} @ <span style="color:#a78bfa">${avgEffortW?avgEffortW+'W':''}</span>${avgEffortHr?` / <span style="color:#f87171">${avgEffortHr}bpm</span>`:''}${avgRecupDur?' — '+avgRecupDur+'s récup':''}
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:10px">
+            ${wStd?`<span style="color:var(--mt)">Variance: ±${wStd}W</span>`:''}
+            <span>${repQuality}</span>
+            ${wVals.length>1?`<span style="color:var(--mt)">Meilleur: ${Math.max(...wVals)}W · Moins bon: ${Math.min(...wVals)}W</span>`:''}
+          </div>
+          ${wVals.length>2?`<div style="margin-top:8px;height:28px;display:flex;align-items:flex-end;gap:2px">${wVals.map((w,i)=>{const h=Math.round((w/Math.max(...wVals))*100);const col=w>=wMean*0.97?'#a78bfa':w>=wMean*0.92?'#60a5fa':'#f87171';return`<div title="Rép ${i+1}: ${w}W" style="flex:1;height:${h}%;background:${col};border-radius:2px 2px 0 0;min-height:4px"></div>`;}).join('')}</div>`:''}
+        </div>`;
+      } else {
+        // Pas d'alternance — regrouper les laps similaires entre eux
+        const groups=[];
+        const used=new Set();
+        enrichedLaps.forEach((lap,i)=>{
+          if(used.has(i))return;
+          const group=[lap];
+          used.add(i);
+          enrichedLaps.forEach((lap2,j)=>{
+            if(j<=i||used.has(j))return;
+            if(similar(lap,lap2)){group.push(lap2);used.add(j);}
+          });
+          groups.push(group);
+        });
+        html+=`<div style="display:flex;flex-direction:column;gap:6px">`;
+        groups.forEach(group=>{
+          const n=group.length;
+          const avgW=group.filter(l=>l.avgWatts).length?Math.round(group.reduce((s,l)=>s+(l.avgWatts||0),0)/group.filter(l=>l.avgWatts).length):null;
+          const avgH=group.filter(l=>l.avgHr).length?Math.round(group.reduce((s,l)=>s+(l.avgHr||0),0)/group.filter(l=>l.avgHr).length):null;
+          const avgDur=group[0].duration?Math.round(group.reduce((s,l)=>s+(l.duration||0),0)/n):null;
+          const avgDist=group[0].distance?Math.round(group.reduce((s,l)=>s+(l.distance||0),0)/n):null;
+          html+=`<div style="background:#161b25;border-radius:7px;padding:9px 12px;font-size:12px;display:flex;align-items:center;gap:8px">
+            ${n>1?`<span style="color:#a78bfa;font-weight:700;font-size:14px">${n}×</span>`:'<span style="color:var(--mt);font-size:11px">1×</span>'}
+            <span style="color:#fff;flex:1">${group[0].name||'Effort'}</span>
+            ${avgDist?`<span style="color:var(--mt)">${(avgDist/1000).toFixed(2)}km</span>`:''}
+            ${avgDur?`<span style="color:var(--mt)">${avgDur}s</span>`:''}
+            ${avgW?`<span style="color:#a78bfa;font-weight:600">${avgW}W</span>`:''}
+            ${avgH?`<span style="color:#f87171;font-weight:600">${avgH}bpm</span>`:''}
+          </div>`;
+        });
+        html+=`</div>`;
+      }
     }
     if(!html){
-      html='<p style="font-size:10px;color:var(--mt)">Aucun détail d\'intervalle disponible pour cette séance (pas de laps enregistrés par le device/connecteur).</p>';
+      html='<p style="font-size:10px;color:var(--mt)">Aucun détail d\'intervalle disponible pour cette séance.</p>';
     }
     div.innerHTML=html;
     btn.style.display='none';
