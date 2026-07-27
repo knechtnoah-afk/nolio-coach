@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Profil Métabolique — Cycliste</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0d12;
+    --s1: #111520;
+    --s2: #1a2035;
+    --bd: #222840;
+    --t: #e8eaf0;
+    --mt: #6b7280;
+    --lt: #9ca3af;
+    --ac: #4f8ef7;
+    --lip: #f97316;
+    --gluc: #6366f1;
+    --lt1c: #10b981;
+    --lt2c: #f59e0b;
+    --rd: #ef4444;
+    --gn: #10b981;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--t);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: linear-gradient(135deg, #0d1220 0%, #111a2e 100%);
+    border-bottom: 1px solid var(--bd);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--lip), var(--gluc));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+  header p { font-size: 11px; color: var(--mt); margin-top: 2px; font-family: 'DM Mono', monospace; }
+
+  /* ── LAYOUT ── */
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+
+  .grid2 { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+  @media(max-width:900px){ .grid2 { grid-template-columns: 1fr; } }
+
+  /* ── PANELS ── */
+  .panel {
+    background: var(--s1);
+    border: 1px solid var(--bd);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--mt);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  /* ── INPUTS ── */
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--lt);
+    margin-bottom: 5px;
+    font-family: 'DM Mono', monospace;
+  }
+  .field input, .field select {
+    width: 100%;
+    background: var(--s2);
+    border: 1px solid var(--bd);
+    border-radius: 7px;
+    padding: 9px 12px;
+    color: var(--t);
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color .2s;
+  }
+  .field input:focus, .field select:focus {
+    outline: none;
+    border-color: var(--ac);
+  }
+  .field .unit {
+    font-size: 10px;
+    color: var(--mt);
+    margin-top: 3px;
+    font-family: 'DM Mono', monospace;
+  }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ── BTN ── */
+  .btn {
+    width: 100%;
+    background: linear-gradient(135deg, var(--lip), var(--gluc));
+    border: none;
+    border-radius: 8px;
+    padding: 11px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity .2s;
+    font-family: 'DM Sans', sans-serif;
+    margin-top: 6px;
+  }
+  .btn:hover { opacity: .88; }
+  .btn-sec {
+    background: var(--s2);
+    border: 1px solid var(--bd);
+    color: var(--lt);
+    margin-top: 8px;
+  }
+
+  /* ── CHART ── */
+  .chart-wrap {
+    position: relative;
+    height: 280px;
+    margin-bottom: 6px;
+  }
+
+  /* ── ZONES ── */
+  .zones { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .zone {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--s2);
+    border-radius: 7px;
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+  .zone .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .zone .name { flex: 1; font-weight: 500; }
+  .zone .pct { font-family: 'DM Mono', monospace; font-size: 11px; }
+  .zone .watts { color: var(--mt); font-family: 'DM Mono', monospace; font-size: 10px; }
+
+  /* ── METRICS ── */
+  .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .metric {
+    background: var(--s2);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .metric .val { font-size: 22px; font-weight: 700; font-family: 'DM Mono', monospace; }
+  .metric .lbl { font-size: 10px; color: var(--mt); margin-top: 3px; }
+
+  /* ── CYCLES ── */
+  .cycle-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 36px;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .cycle-row input {
+    background: var(--s2);
+    border: 1px solid var(--bd);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--t);
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    width: 100%;
+  }
+  .cycle-row input:focus { outline: none; border-color: var(--ac); }
+  .del-btn {
+    background: none;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: var(--mt);
+    cursor: pointer;
+    font-size: 14px;
+    height: 32px;
+    width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .del-btn:hover { color: var(--rd); border-color: var(--rd); }
+
+  .col-heads {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 36px;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .col-heads span {
+    font-size: 9px;
+    color: var(--mt);
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding-left: 2px;
+  }
+
+  /* ── LT ESTIMATION ── */
+  .lt-est {
+    background: linear-gradient(135deg, rgba(16,185,129,.08), rgba(245,158,11,.08));
+    border: 1px solid rgba(16,185,129,.2);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 12px;
+  }
+  .lt-est h3 { font-size: 12px; color: var(--lt); margin-bottom: 10px; font-weight: 500; }
+  .lt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .lt-row .lt-label { font-size: 11px; color: var(--mt); }
+  .lt-row .lt-val { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 600; }
+  .lt-row .lt-delta { font-size: 10px; font-family: 'DM Mono', monospace; margin-left: 8px; }
+  .lt-note { font-size: 9px; color: var(--mt); margin-top: 10px; line-height: 1.5; }
+
+  /* ── TOGGLE ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab {
+    flex: 1;
+    padding: 8px;
+    border-radius: 7px;
+    border: 1px solid var(--bd);
+    background: none;
+    color: var(--mt);
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all .2s;
+  }
+  .tab.active {
+    background: var(--s2);
+    border-color: var(--ac);
+    color: var(--t);
+  }
+
+  /* ── ATHLETE SELECT ── */
+  .athlete-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .atag {
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--bd);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all .2s;
+    background: var(--s2);
+    color: var(--mt);
+  }
+  .atag.active { border-color: var(--ac); color: var(--ac); background: rgba(79,142,247,.1); }
+
+  /* ── SAVED PROFILES ── */
+  .saved-list { display: flex; flex-direction: column; gap: 6px; }
+  .saved-item {
+    display: flex;
+    align-items: center;
+    background: var(--s2);
+    border-radius: 7px;
+    padding: 8px 12px;
+    gap: 10px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: border-color .2s;
+  }
+  .saved-item:hover { border-color: var(--ac); }
+  .saved-item .si-name { flex: 1; font-weight: 500; }
+  .saved-item .si-vals { font-size: 10px; color: var(--mt); font-family: 'DM Mono', monospace; }
+  .saved-item .si-del { color: var(--mt); cursor: pointer; font-size: 14px; padding: 2px 6px; }
+  .saved-item .si-del:hover { color: var(--rd); }
+
+  .empty { color: var(--mt); font-size: 12px; text-align: center; padding: 20px; }
+
+  /* ── PROGRESSION CHART ── */
+  .prog-wrap { position: relative; height: 220px; }
+
+  /* ── SLIDER ── */
+  .intensity-slider { width: 100%; accent-color: var(--ac); margin: 10px 0; }
+  .intensity-display {
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ac);
+    margin: 8px 0 4px;
+  }
+  .intensity-display span { font-size: 13px; color: var(--mt); font-weight: 400; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⚗️</div>
+  <div>
+    <h1>Profil Métabolique</h1>
+    <p>Modèle lipides / glucides · Estimation LT1/LT2 · Adaptation à l'entraînement</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="grid2">
+
+    <!-- ── COLONNE GAUCHE : SAISIE ── -->
+    <div>
+      <!-- Profils sauvegardés -->
+      <div class="panel">
+        <h2>📁 Profils sauvegardés</h2>
+        <div class="saved-list" id="savedList">
+          <div class="empty">Aucun profil — remplis le formulaire ci-dessous</div>
+        </div>
+      </div>
+
+      <!-- Formulaire athlète -->
+      <div class="panel">
+        <h2>👤 Profil athlète</h2>
+        <div class="field">
+          <label>Nom de l'athlète</label>
+          <input type="text" id="name" placeholder="ex: Carter Guichard">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>LT1 (W)</label>
+            <input type="number" id="lt1w" placeholder="240" min="50" max="600">
+            <div class="unit">Seuil aérobie — 1ère accumulation lactate</div>
+          </div>
+          <div class="field">
+            <label>LT2 (W)</label>
+            <input type="number" id="lt2w" placeholder="320" min="50" max="700">
+            <div class="unit">Seuil anaérobie — MLSS</div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>VLamax (mmol/L/s)</label>
+            <input type="number" id="vlamax" placeholder="0.45" step="0.01" min="0.1" max="1.5">
+            <div class="unit">Vitesse max de production lactate</div>
+          </div>
+          <div class="field">
+            <label>Clairance lactate</label>
+            <input type="number" id="clairance" placeholder="0.30" step="0.01" min="0.05" max="1.0">
+            <div class="unit">Vitesse d'élimination (mmol/L/s)</div>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label>VO2max (mL/kg/min)</label>
+            <input type="number" id="vo2max" placeholder="70" min="30" max="95">
+          </div>
+          <div class="field">
+            <label>FTP (W)</label>
+            <input type="number" id="ftp" placeholder="310" min="50" max="600">
+            <div class="unit">Optionnel — si connu</div>
+          </div>
+        </div>
+        <button class="btn" onclick="calculate()">⚗️ Calculer le profil</button>
+        <button class="btn btn-sec" onclick="saveProfile()">💾 Sauvegarder ce profil</button>
+      </div>
+
+      <!-- Cycles d'entraînement -->
+      <div class="panel">
+        <h2>📅 Cycles d'entraînement</h2>
+        <p style="font-size:11px;color:var(--mt);margin-bottom:12px">Ajoute les cycles récents pour estimer l'évolution de LT1/LT2 et de la courbe métabolique.</p>
+        <div class="col-heads">
+          <span>Nom du cycle</span>
+          <span>Durée (sem)</span>
+          <span>Type dominant</span>
+          <span></span>
+        </div>
+        <div id="cycleList"></div>
+        <button class="btn btn-sec" onclick="addCycle()" style="margin-top:4px">+ Ajouter un cycle</button>
+      </div>
+    </div>
+
+    <!-- ── COLONNE DROITE : RÉSULTATS ── -->
+    <div id="results" style="display:none">
+
+      <!-- Métriques clés -->
+      <div class="panel">
+        <h2>📊 Profil métabolique — <span id="resName">—</span></h2>
+        <div class="metrics">
+          <div class="metric">
+            <div class="val" id="mLT1" style="color:var(--lt1c)">—</div>
+            <div class="lbl">LT1 (W)</div>
+          </div>
+          <div class="metric">
+            <div class="val" id="mLT2" style="color:var(--lt2c)">—</div>
+            <div class="lbl">LT2 (W)</div>
+          </div>
+          <div class="metric">
+            <div class="val" id="mFatMax" style="color:var(--lip)">—</div>
+            <div class="lbl">FatMax (W)</div>
+          </div>
+          <div class="metric">
+            <div class="val" id="mFatMaxPct" style="color:var(--lip)">—</div>
+            <div class="lbl">% Lipides @ LT1</div>
+          </div>
+          <div class="metric">
+            <div class="val" id="mCrossover" style="color:var(--gluc)">—</div>
+            <div class="lbl">Crossover (W)</div>
+          </div>
+          <div class="metric">
+            <div class="val" id="mProfile" style="color:var(--ac);font-size:14px">—</div>
+            <div class="lbl">Profil métabolique</div>
+          </div>
+        </div>
+
+        <!-- Slider interactif -->
+        <div style="background:var(--s2);border-radius:8px;padding:14px;margin-bottom:14px">
+          <div style="font-size:11px;color:var(--mt);margin-bottom:6px">🎚️ Simulation à intensité variable</div>
+          <input type="range" class="intensity-slider" id="intensitySlider" min="0" max="100" value="60" oninput="updateSlider()">
+          <div class="intensity-display" id="sliderWatts">— W <span id="sliderPct">—% FTP</span></div>
+          <div style="display:flex;gap:16px;justify-content:center;font-size:11px;font-family:'DM Mono',monospace">
+            <span style="color:var(--lip)">🟠 Lipides: <b id="sliderLip">—</b>%</span>
+            <span style="color:var(--gluc)">🔵 Glucides: <b id="sliderGluc">—</b>%</span>
+            <span style="color:var(--mt)">Lactate: <b id="sliderLac">—</b> mmol/L</span>
+          </div>
+        </div>
+
+        <!-- Graphique principal -->
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('lipgluc',this)">Lipides / Glucides</button>
+          <button class="tab" onclick="switchTab('lactate',this)">Lactate</button>
+          <button class="tab" onclick="switchTab('progression',this)">Progression LT</button>
+        </div>
+        <div class="chart-wrap" id="chartLipgluc"><canvas id="cvLipgluc"></canvas></div>
+        <div class="chart-wrap" id="chartLactate" style="display:none"><canvas id="cvLactate"></canvas></div>
+        <div class="prog-wrap" id="chartProgression" style="display:none"><canvas id="cvProgression"></canvas></div>
+      </div>
+
+      <!-- Zones d'intensité -->
+      <div class="panel">
+        <h2>🎯 Zones d'intensité — substrats utilisés</h2>
+        <div class="zones" id="zonesDiv"></div>
+      </div>
+
+      <!-- Estimation évolution LT -->
+      <div class="panel">
+        <h2>📈 Estimation évolution LT1 / LT2</h2>
+        <p style="font-size:11px;color:var(--mt);margin-bottom:12px">Basée sur les cycles d'entraînement saisis et les adaptations physiologiques connues.</p>
+        <div id="ltEstDiv">
+          <div class="empty">Ajoute des cycles d'entraînement pour estimer l'évolution.</div>
+        </div>
+      </div>
+
+    </div><!-- /results -->
+
+    <!-- État vide -->
+    <div id="emptyState" style="text-align:center;padding:60px 20px;color:var(--mt)">
+      <div style="font-size:48px;margin-bottom:16px">⚗️</div>
+      <div style="font-size:16px;font-weight:500;color:var(--lt);margin-bottom:8px">Saisis le profil d'un athlète</div>
+      <div style="font-size:12px;line-height:1.6">LT1, LT2, VLamax et clairance suffisent<br>pour modéliser la courbe métabolique complète.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── ÉTAT ───────────────────────────────────────────────────────
+let profiles = JSON.parse(localStorage.getItem('metaProfiles')||'[]');
+let currentProfile = null;
+let charts = {};
+let cycleCount = 0;
+
+// ─── INIT ───────────────────────────────────────────────────────
+window.onload = () => {
+  renderSaved();
+  addCycle(); // un cycle par défaut
+};
+
+// ─── SAUVEGARDE ─────────────────────────────────────────────────
+function saveProfile() {
+  const name = document.getElementById('name').value.trim();
+  if (!name) { alert('Saisis le nom de l\'athlète d\'abord.'); return; }
+  const p = readForm();
+  if (!p.lt1 || !p.lt2) { alert('LT1 et LT2 sont obligatoires.'); return; }
+  p.name = name;
+  p.id = Date.now();
+  const idx = profiles.findIndex(x => x.name === name);
+  if (idx >= 0) profiles[idx] = p;
+  else profiles.push(p);
+  localStorage.setItem('metaProfiles', JSON.stringify(profiles));
+  renderSaved();
+}
+
+function renderSaved() {
+  const el = document.getElementById('savedList');
+  if (!profiles.length) {
+    el.innerHTML = '<div class="empty">Aucun profil — remplis le formulaire ci-dessous</div>';
+    return;
+  }
+  el.innerHTML = profiles.map((p, i) => `
+    <div class="saved-item" onclick="loadProfile(${i})">
+      <span class="si-name">${p.name}</span>
+      <span class="si-vals">LT1: ${p.lt1}W · LT2: ${p.lt2}W · VLamax: ${p.vlamax}</span>
+      <span class="si-del" onclick="event.stopPropagation();deleteProfile(${i})">✕</span>
+    </div>
+  `).join('');
+}
+
+function deleteProfile(i) {
+  profiles.splice(i, 1);
+  localStorage.setItem('metaProfiles', JSON.stringify(profiles));
+  renderSaved();
+}
+
+function loadProfile(i) {
+  const p = profiles[i];
+  document.getElementById('name').value = p.name || '';
+  document.getElementById('lt1w').value = p.lt1 || '';
+  document.getElementById('lt2w').value = p.lt2 || '';
+  document.getElementById('vlamax').value = p.vlamax || '';
+  document.getElementById('clairance').value = p.clairance || '';
+  document.getElementById('vo2max').value = p.vo2max || '';
+  document.getElementById('ftp').value = p.ftp || '';
+  calculate();
+}
+
+// ─── CYCLES ─────────────────────────────────────────────────────
+function addCycle() {
+  const list = document.getElementById('cycleList');
+  const id = ++cycleCount;
+  const div = document.createElement('div');
+  div.className = 'cycle-row';
+  div.id = `cycle_${id}`;
+  div.innerHTML = `
+    <input type="text" placeholder="Fond / Seuil / PMA..." id="cn_${id}">
+    <input type="number" placeholder="4" min="1" max="20" id="cd_${id}">
+    <select id="ct_${id}" style="background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:7px 8px;color:var(--t);font-size:11px;width:100%">
+      <option value="endurance">Endurance (Z1-Z2)</option>
+      <option value="tempo">Tempo (Z3)</option>
+      <option value="seuil">Travail au seuil (Z4)</option>
+      <option value="pma">PMA / VO2max (Z5)</option>
+      <option value="mixte">Mixte</option>
+    </select>
+    <button class="del-btn" onclick="delCycle(${id})">✕</button>
+  `;
+  list.appendChild(div);
+}
+
+function delCycle(id) {
+  const el = document.getElementById(`cycle_${id}`);
+  if (el) el.remove();
+}
+
+function getCycles() {
+  const rows = document.querySelectorAll('.cycle-row');
+  return Array.from(rows).map(r => {
+    const id = r.id.replace('cycle_','');
+    return {
+      name: document.getElementById(`cn_${id}`)?.value || '',
+      weeks: parseInt(document.getElementById(`cd_${id}`)?.value) || 4,
+      type: document.getElementById(`ct_${id}`)?.value || 'endurance'
+    };
+  }).filter(c => c.name || c.weeks);
+}
+
+// ─── LECTURE FORM ────────────────────────────────────────────────
+function readForm() {
+  return {
+    name: document.getElementById('name').value.trim(),
+    lt1: parseFloat(document.getElementById('lt1w').value) || null,
+    lt2: parseFloat(document.getElementById('lt2w').value) || null,
+    vlamax: parseFloat(document.getElementById('vlamax').value) || 0.4,
+    clairance: parseFloat(document.getElementById('clairance').value) || 0.3,
+    vo2max: parseFloat(document.getElementById('vo2max').value) || 65,
+    ftp: parseFloat(document.getElementById('ftp').value) || null,
+  };
+}
+
+// ─── MODÈLE MÉTABOLIQUE ─────────────────────────────────────────
+// Basé sur le modèle de Mader (1976) adapté pour cyclistes
+// avec VLamax et clairance comme paramètres clés
+
+function metabolicModel(watts, lt1, lt2, vlamax, clairance, vo2max, ftp) {
+  // Normalisation : on travaille en % de LT2 comme référence
+  const ref = ftp || lt2;
+  const pct = watts / ref; // ratio vs FTP/LT2
+
+  // Lactate modélisé : courbe en J avec inflexion à LT1 et LT2
+  // Production = VLamax * f(intensité), Élimination = clairance * [La]
+  // Simplification : modèle logistique calibré sur LT1/LT2
+  const lt1pct = lt1 / ref;
+  const lt2pct = lt2 / ref;
+
+  // Lactate à l'équilibre estimé
+  let lactate;
+  if (pct < lt1pct) {
+    lactate = 0.8 + (pct / lt1pct) * 0.7; // ~0.8-1.5 mmol sous LT1
+  } else if (pct < lt2pct) {
+    const t = (pct - lt1pct) / (lt2pct - lt1pct);
+    lactate = 1.5 + t * 2.5; // 1.5 → 4 mmol entre LT1 et LT2
+  } else {
+    const t = Math.min(1, (pct - lt2pct) / 0.3);
+    lactate = 4 + t * 8 * vlamax; // accumulation rapide au-delà du MLSS
+  }
+
+  // FatMax : max oxydation lipides ~55-75% VO2max → ~60-75% LT2 pour cycliste entraîné
+  // VLamax bas = profil aérobie = FatMax plus élevé
+  const fatMaxRatio = 0.55 + (0.5 - vlamax) * 0.4; // VLamax bas → FatMax plus haut
+  const fatMaxW = Math.round(ref * fatMaxRatio);
+
+  // Oxydation lipides (%) : gaussienne centrée sur FatMax
+  // Au-delà du crossover, pratiquement 0%
+  const crossoverRatio = lt2pct + (clairance - 0.2) * 0.3;
+  const crossoverW = Math.round(ref * Math.min(crossoverRatio, 1.1));
+
+  let fatPct;
+  if (watts <= fatMaxW) {
+    // Montée progressive vers FatMax
+    const t = watts / fatMaxW;
+    fatPct = Math.round(5 + t * (85 - 15 * vlamax));
+  } else if (watts <= crossoverW) {
+    // Descente depuis FatMax jusqu'au crossover
+    const t = (watts - fatMaxW) / (crossoverW - fatMaxW);
+    const maxFat = 85 - 15 * vlamax;
+    fatPct = Math.round(maxFat * (1 - t));
+  } else {
+    fatPct = 0;
+  }
+  fatPct = Math.max(0, Math.min(100, fatPct));
+  const glucPct = 100 - fatPct;
+
+  return { lactate: Math.round(lactate * 10) / 10, fatPct, glucPct, fatMaxW, crossoverW };
+}
+
+// ─── CALCUL PRINCIPAL ───────────────────────────────────────────
+function calculate() {
+  const p = readForm();
+  if (!p.lt1 || !p.lt2) { alert('LT1 et LT2 sont obligatoires.'); return; }
+  currentProfile = p;
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('resName').textContent = p.name || 'Athlète';
+
+  const ref = p.ftp || p.lt2;
+  const maxW = Math.round(ref * 1.5);
+
+  // Générer la courbe sur 0→maxW
+  const step = Math.max(5, Math.round(maxW / 80));
+  const wattPoints = [];
+  for (let w = 0; w <= maxW; w += step) wattPoints.push(w);
+
+  const fatData = [], glucData = [], lacData = [];
+  let fatMaxW = 0, crossoverW = 0;
+
+  wattPoints.forEach(w => {
+    const r = metabolicModel(w, p.lt1, p.lt2, p.vlamax, p.clairance, p.vo2max, ref);
+    fatData.push(r.fatPct);
+    glucData.push(r.glucPct);
+    lacData.push(r.lactate);
+    fatMaxW = r.fatMaxW;
+    crossoverW = r.crossoverW;
+  });
+
+  // Métriques clés
+  const r0 = metabolicModel(p.lt1, p.lt1, p.lt2, p.vlamax, p.clairance, p.vo2max, ref);
+  document.getElementById('mLT1').textContent = p.lt1 + 'W';
+  document.getElementById('mLT2').textContent = p.lt2 + 'W';
+  document.getElementById('mFatMax').textContent = fatMaxW + 'W';
+  document.getElementById('mFatMaxPct').textContent = r0.fatPct + '%';
+  document.getElementById('mCrossover').textContent = crossoverW + 'W';
+
+  // Profil métabolique
+  let profil;
+  if (p.vlamax < 0.3) profil = '🏔 Grimpeur / Endurance';
+  else if (p.vlamax < 0.5) profil = '⚡ Rouleur / Mixte';
+  else if (p.vlamax < 0.7) profil = '💥 Puncheur';
+  else profil = '🚀 Sprinteur';
+  document.getElementById('mProfile').textContent = profil;
+
+  // ── GRAPHIQUE LIPIDES / GLUCIDES ──
+  renderLipGluc(wattPoints, fatData, glucData, p.lt1, p.lt2, fatMaxW, crossoverW);
+  renderLactate(wattPoints, lacData, p.lt1, p.lt2);
+
+  // Zones
+  renderZones(p, ref, fatMaxW, crossoverW);
+
+  // Slider init
+  const slider = document.getElementById('intensitySlider');
+  slider.max = maxW;
+  slider.value = Math.round(p.lt1 * 0.9);
+  updateSlider();
+
+  // LT estimation depuis cycles
+  renderLTEstimation(p, getCycles());
+}
+
+// ─── GRAPHIQUE LIPIDES / GLUCIDES ───────────────────────────────
+function renderLipGluc(wPts, fatD, glucD, lt1, lt2, fatMaxW, crossoverW) {
+  if (charts.lipgluc) charts.lipgluc.destroy();
+  const ctx = document.getElementById('cvLipgluc').getContext('2d');
+  charts.lipgluc = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: wPts,
+      datasets: [
+        {
+          label: 'Lipides (%)',
+          data: fatD,
+          borderColor: '#f97316',
+          backgroundColor: 'rgba(249,115,22,.15)',
+          fill: true, tension: .4, borderWidth: 2, pointRadius: 0
+        },
+        {
+          label: 'Glucides (%)',
+          data: glucD,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,.1)',
+          fill: true, tension: .4, borderWidth: 2, pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { labels: { color: '#9ca3af', font: { size: 10 } } },
+        tooltip: {
+          callbacks: {
+            title: (items) => `${items[0].label}W`,
+            label: (item) => `${item.dataset.label}: ${item.raw}%`
+          }
+        },
+        annotation: {
+          annotations: {
+            lt1line: { type: 'line', x: lt1, borderColor: 'rgba(16,185,129,.6)', borderWidth: 1.5, borderDash: [4,4], label: { display: true, content: 'LT1', color: '#10b981', font: { size: 9 }, position: 'start' } },
+            lt2line: { type: 'line', x: lt2, borderColor: 'rgba(245,158,11,.6)', borderWidth: 1.5, borderDash: [4,4], label: { display: true, content: 'LT2', color: '#f59e0b', font: { size: 9 }, position: 'start' } },
+            fatmaxline: { type: 'line', x: fatMaxW, borderColor: 'rgba(249,115,22,.4)', borderWidth: 1, borderDash: [2,4], label: { display: true, content: 'FatMax', color: '#f97316', font: { size: 8 }, position: 'end' } },
+          }
+        }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Puissance (W)', color: '#6b7280', font: { size: 9 } }, ticks: { color: '#6b7280', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: 'rgba(34,40,64,.6)' } },
+        y: { min: 0, max: 100, title: { display: true, text: '% substrat utilisé', color: '#6b7280', font: { size: 9 } }, ticks: { color: '#6b7280', font: { size: 9 }, callback: v => v + '%' }, grid: { color: 'rgba(34,40,64,.6)' } }
+      }
+    }
+  });
+}
+
+// ─── GRAPHIQUE LACTATE ───────────────────────────────────────────
+function renderLactate(wPts, lacD, lt1, lt2) {
+  if (charts.lactate) charts.lactate.destroy();
+  const ctx = document.getElementById('cvLactate').getContext('2d');
+  charts.lactate = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: wPts,
+      datasets: [{
+        label: 'Lactate sanguin (mmol/L)',
+        data: lacD,
+        borderColor: '#f43f5e',
+        backgroundColor: 'rgba(244,63,94,.1)',
+        fill: true, tension: .4, borderWidth: 2, pointRadius: 0
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#9ca3af', font: { size: 10 } } },
+        tooltip: { callbacks: { title: i => `${i[0].label}W`, label: i => `Lactate: ${i.raw} mmol/L` } }
+      },
+      scales: {
+        x: { ticks: { color: '#6b7280', font: { size: 9 }, maxTicksLimit: 10 }, grid: { color: 'rgba(34,40,64,.6)' } },
+        y: { min: 0, title: { display: true, text: 'mmol/L', color: '#6b7280', font: { size: 9 } }, ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: 'rgba(34,40,64,.6)' } }
+      }
+    }
+  });
+}
+
+// ─── ZONES ──────────────────────────────────────────────────────
+function renderZones(p, ref, fatMaxW, crossoverW) {
+  const zones = [
+    { name: 'Z1 — Récupération active', wMin: 0, wMax: Math.round(p.lt1 * 0.75), color: '#6b7280' },
+    { name: 'Z2 — Endurance / FatMax', wMin: Math.round(p.lt1 * 0.75), wMax: p.lt1, color: '#10b981' },
+    { name: 'Z3 — Tempo', wMin: p.lt1, wMax: Math.round((p.lt1 + p.lt2) / 2), color: '#3b82f6' },
+    { name: 'Z4 — Seuil (MLSS)', wMin: Math.round((p.lt1 + p.lt2) / 2), wMax: p.lt2, color: '#f59e0b' },
+    { name: 'Z5 — VO2max / PMA', wMin: p.lt2, wMax: Math.round(p.lt2 * 1.2), color: '#f97316' },
+    { name: 'Z6 — Anaérobie', wMin: Math.round(p.lt2 * 1.2), wMax: Math.round(p.lt2 * 1.5), color: '#ef4444' },
+  ];
+  const div = document.getElementById('zonesDiv');
+  div.innerHTML = zones.map(z => {
+    const mid = (z.wMin + z.wMax) / 2;
+    const r = metabolicModel(mid, p.lt1, p.lt2, p.vlamax, p.clairance, p.vo2max, ref);
+    return `
+      <div class="zone">
+        <div class="dot" style="background:${z.color}"></div>
+        <div class="name">${z.name}</div>
+        <div class="watts">${z.wMin}–${z.wMax}W</div>
+        <div class="pct" style="color:var(--lip)">🟠 ${r.fatPct}%</div>
+        <div class="pct" style="color:var(--gluc)">🔵 ${r.glucPct}%</div>
+        <div class="pct" style="color:var(--mt)">${r.lactate} mmol</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── SLIDER ─────────────────────────────────────────────────────
+function updateSlider() {
+  if (!currentProfile) return;
+  const p = currentProfile;
+  const ref = p.ftp || p.lt2;
+  const w = parseInt(document.getElementById('intensitySlider').value);
+  const r = metabolicModel(w, p.lt1, p.lt2, p.vlamax, p.clairance, p.vo2max, ref);
+  const pct = Math.round(w / ref * 100);
+  document.getElementById('sliderWatts').innerHTML = `${w}W <span id="sliderPct">${pct}% FTP</span>`;
+  document.getElementById('sliderLip').textContent = r.fatPct;
+  document.getElementById('sliderGluc').textContent = r.glucPct;
+  document.getElementById('sliderLac').textContent = r.lactate;
+}
+
+// ─── ESTIMATION LT1/LT2 SELON CYCLES ────────────────────────────
+function renderLTEstimation(p, cycles) {
+  if (!cycles.length) {
+    document.getElementById('ltEstDiv').innerHTML = '<div class="empty">Ajoute des cycles d\'entraînement pour estimer l\'évolution.</div>';
+    return;
+  }
+
+  // Adaptations connues par type de cycle (% d'amélioration par semaine)
+  // Sources : Seiler 2010, Stöggl & Sperlich 2014, Muñoz 2014
+  const adaptations = {
+    endurance: { lt1: 0.008, lt2: 0.003, vlamax: -0.005, note: 'Développe l\'oxydation lipidique et remonte LT1 (+0.8%/sem)' },
+    tempo:     { lt1: 0.005, lt2: 0.006, vlamax: -0.002, note: 'Améliore le tempo et remonte légèrement LT2 (+0.6%/sem)' },
+    seuil:     { lt1: 0.003, lt2: 0.012, vlamax: 0.001,  note: 'Très efficace pour élever LT2 (+1.2%/sem) mais faible impact LT1' },
+    pma:       { lt1: 0.002, lt2: 0.008, vlamax: 0.008,  note: 'Augmente VO2max et LT2 mais peut augmenter VLamax (+0.8%/sem)' },
+    mixte:     { lt1: 0.005, lt2: 0.007, vlamax: 0.001,  note: 'Impact équilibré sur LT1 et LT2' },
+  };
+
+  let lt1Est = p.lt1;
+  let lt2Est = p.lt2;
+  let vlaMaxEst = p.vlamax;
+  const progression = [{ week: 0, lt1: lt1Est, lt2: lt2Est, label: 'Baseline' }];
+  let totalWeeks = 0;
+
+  cycles.forEach(c => {
+    const adapt = adaptations[c.type] || adaptations.mixte;
+    for (let w = 0; w < c.weeks; w++) {
+      lt1Est = lt1Est * (1 + adapt.lt1);
+      lt2Est = lt2Est * (1 + adapt.lt2);
+      vlaMaxEst = Math.max(0.1, vlaMaxEst + adapt.vlamax * 0.01);
+      totalWeeks++;
+      if (w === c.weeks - 1) {
+        progression.push({
+          week: totalWeeks,
+          lt1: Math.round(lt1Est),
+          lt2: Math.round(lt2Est),
+          label: c.name || c.type
+        });
+      }
+    }
+  });
+
+  lt1Est = Math.round(lt1Est);
+  lt2Est = Math.round(lt2Est);
+
+  const d1 = lt1Est - p.lt1;
+  const d2 = lt2Est - p.lt2;
+
+  document.getElementById('ltEstDiv').innerHTML = `
+    <div class="lt-est">
+      <h3>Après ${totalWeeks} semaines d'entraînement</h3>
+      <div class="lt-row">
+        <span class="lt-label">LT1 estimé</span>
+        <div style="display:flex;align-items:center">
+          <span class="lt-val" style="color:var(--lt1c)">${lt1Est}W</span>
+          <span class="lt-delta" style="color:${d1>=0?'var(--gn)':'var(--rd)'}">${d1>=0?'+':''}${d1}W</span>
+        </div>
+      </div>
+      <div class="lt-row">
+        <span class="lt-label">LT2 estimé</span>
+        <div style="display:flex;align-items:center">
+          <span class="lt-val" style="color:var(--lt2c)">${lt2Est}W</span>
+          <span class="lt-delta" style="color:${d2>=0?'var(--gn)':'var(--rd)'}">${d2>=0?'+':''}${d2}W</span>
+        </div>
+      </div>
+      <div class="lt-row">
+        <span class="lt-label">VLamax estimée</span>
+        <span class="lt-val" style="color:var(--ac)">${vlaMaxEst.toFixed(3)}</span>
+      </div>
+      <div class="lt-note">⚠️ Estimation indicative basée sur les adaptations moyennes de la littérature scientifique (Seiler 2010, Stöggl & Sperlich 2014). Les gains réels dépendent de l'état de forme initial, de la récupération et de la variabilité individuelle. Un test de lactate reste indispensable pour valider.</div>
+    </div>
+  `;
+
+  // Graphique de progression
+  renderProgression(progression);
+}
+
+// ─── GRAPHIQUE PROGRESSION LT ────────────────────────────────────
+function renderProgression(data) {
+  if (charts.progression) charts.progression.destroy();
+  const ctx = document.getElementById('cvProgression').getContext('2d');
+  charts.progression = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.label ? `S${d.week}\n${d.label}` : `S${d.week}`),
+      datasets: [
+        {
+          label: 'LT1 (W)',
+          data: data.map(d => d.lt1),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16,185,129,.1)',
+          borderWidth: 2, pointRadius: 5, fill: true, tension: .3
+        },
+        {
+          label: 'LT2 (W)',
+          data: data.map(d => d.lt2),
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,.1)',
+          borderWidth: 2, pointRadius: 5, fill: true, tension: .3
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#9ca3af', font: { size: 10 } } } },
+      scales: {
+        x: { ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: 'rgba(34,40,64,.6)' } },
+        y: { title: { display: true, text: 'Puissance (W)', color: '#6b7280', font: { size: 9 } }, ticks: { color: '#6b7280', font: { size: 9 } }, grid: { color: 'rgba(34,40,64,.6)' } }
+      }
+    }
+  });
+}
+
+// ─── TABS ───────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('chartLipgluc').style.display = tab === 'lipgluc' ? 'block' : 'none';
+  document.getElementById('chartLactate').style.display = tab === 'lactate' ? 'block' : 'none';
+  document.getElementById('chartProgression').style.display = tab === 'progression' ? 'block' : 'none';
+  if (tab === 'progression' && currentProfile) {
+    renderLTEstimation(currentProfile, getCycles());
+  }
+}
+</script>
+</body>
+</html>
