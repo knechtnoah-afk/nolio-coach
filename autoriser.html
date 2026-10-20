@@ -112,8 +112,8 @@ h1{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#
 <script>
 // ── CONFIG — à ne pas modifier ──────────────────────────────
 const CLIENT_ID = 'LDiR5WZ4opOj8mURtmByci5MppyfqdvQEzp7Aye8';
-const CLIENT_SECRET = 'Uvvoh9La99720QIFVPSLNHrRrfKAj6K3r3ZvlPUN9c8Dleghmxc9eGcGCUpyglKHVtZ7zV0YeNhON1YicYwlr3XigjyHmrmOi7mXT5Umgxfiok2A3E3yYvSOwQFU919R';
-const CALLBACK_URL = location.origin + location.pathname;
+const CALLBACK_URL = 'https://knechtnoah-afk.github.io/nolio-coach/autoriser.html';
+const WORKER_URL = 'https://nolio-tokens.knecht-noah.workers.dev';
 // ────────────────────────────────────────────────────────────
 
 function show(id) {
@@ -131,62 +131,22 @@ async function handleCallback(code) {
   document.getElementById('loadTxt').textContent = 'Finalisation de la connexion...';
 
   try {
-    const creds = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: CALLBACK_URL
-    });
-
-    const r = await fetch('https://www.nolio.io/api/token/', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${creds}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: body.toString()
-    });
-
-    if (!r.ok) throw new Error('Échange de token échoué : ' + r.status);
-    const d = await r.json();
-
-    // Récupérer le nom du coureur
-    document.getElementById('loadTxt').textContent = 'Récupération du profil...';
-    let name = 'Coureur';
-    try {
-      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
-      name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Coureur';
-    } catch(e) {}
-
-    // Récupérer l'ID Nolio de l'athlète
-    let athleteId = String(Date.now()); // fallback
-    try {
-      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
-      if (user && user.id) athleteId = String(user.id);
-    } catch(e) {}
-
     // Récupérer la team depuis l'URL (?team=NK ou ?team=NMCA)
     const urlTeam = new URLSearchParams(location.search).get('team') || 'NK';
 
-    // Envoyer le token au Worker Cloudflare (toujours disponible, pas besoin que l'ordi du coach soit allumé)
-    document.getElementById('loadTxt').textContent = 'Enregistrement...';
-    try {
-      await fetch('https://nolio-tokens.knecht-noah.workers.dev/token', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          athlete_id:    athleteId,
-          name:          name,
-          team:          urlTeam,
-          access_token:  d.access_token,
-          refresh_token: d.refresh_token,
-          expires_in:    d.expires_in || 86400
-        })
-      });
-    } catch(e) {
-      // Le serveur local n'est pas lancé — on continue quand même (token perdu)
-      console.warn('Serveur local inaccessible:', e.message);
+    // Envoyer le code au Worker — c'est lui qui fait l'échange avec Nolio (secret protégé côté serveur)
+    const r = await fetch(WORKER_URL + '/exchange', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ code: code, team: urlTeam })
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error('Échange de token échoué : ' + (err.detail || r.status));
     }
+    const d = await r.json();
+    const name = d.name || 'Coureur';
 
     // Afficher succès
     document.getElementById('okName').textContent = `Bonjour ${name} !`;
