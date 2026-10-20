@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Autorisation — Pôle Performance</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:#f8fafc;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+
+.card{background:#fff;border-radius:20px;box-shadow:0 4px 40px rgba(0,0,0,.10);padding:40px 36px;max-width:420px;width:100%;text-align:center;}
+
+.logo{width:72px;height:72px;background:linear-gradient(135deg,#3b82f6,#6366f1);border-radius:18px;
+  display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 20px;}
+
+.club{font-size:11px;font-weight:600;color:#6366f1;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;}
+h1{font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#0f172a;margin-bottom:8px;line-height:1.3;}
+.sub{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:28px;}
+
+.perms{background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:28px;text-align:left;}
+.perms-title{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+.perm{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;color:#334155;}
+.perm:not(:last-child){border-bottom:1px solid #e2e8f0;}
+.perm-icon{width:28px;height:28px;border-radius:8px;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;}
+
+.btn{display:block;width:100%;background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;
+  color:#fff;padding:14px;border-radius:12px;font-size:15px;font-weight:600;
+  cursor:pointer;font-family:'Inter',sans-serif;text-decoration:none;transition:opacity .2s;margin-bottom:10px;}
+.btn:hover{opacity:.88;}
+
+.note{font-size:11px;color:#94a3b8;line-height:1.5;}
+.note a{color:#3b82f6;text-decoration:none;}
+
+/* États */
+.screen{display:none;}
+.screen.active{display:block;}
+
+/* Succès */
+.success-icon{width:72px;height:72px;background:#dcfce7;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;}
+.success-name{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:#0f172a;margin-bottom:8px;}
+.success-msg{font-size:14px;color:#64748b;line-height:1.6;margin-bottom:20px;}
+.success-badge{display:inline-flex;align-items:center;gap:6px;background:#dcfce7;
+  color:#16a34a;padding:8px 16px;border-radius:20px;font-size:13px;font-weight:600;}
+
+/* Erreur */
+.error-icon{width:72px;height:72px;background:#fee2e2;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;}
+
+/* Loading */
+.spin{width:44px;height:44px;border:3px solid #e2e8f0;border-top-color:#3b82f6;
+  border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-txt{font-size:14px;color:#64748b;}
+
+.footer{margin-top:24px;font-size:11px;color:#94a3b8;text-align:center;}
+</style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- ÉCRAN 1 : Demande d'autorisation -->
+  <div class="screen active" id="screenAsk">
+    <div class="logo">🏃</div>
+    <div class="club">Nice Métropole Côte d'Azur — Pôle Performance</div>
+    <h1>Autoriser l'accès à tes données</h1>
+    <p class="sub">Noah Knecht (entraîneur) souhaite accéder à tes données d'entraînement Nolio pour assurer ton suivi de performance.</p>
+
+    <div class="perms">
+      <div class="perms-title">Données accessibles</div>
+      <div class="perm"><div class="perm-icon">🏃</div>Séances et entraînements</div>
+      <div class="perm"><div class="perm-icon">💜</div>HRV / RMSSD (Whoop, Oura…)</div>
+      <div class="perm"><div class="perm-icon">😴</div>Sommeil et récupération</div>
+      <div class="perm"><div class="perm-icon">❤️</div>Fréquence cardiaque repos</div>
+      <div class="perm"><div class="perm-icon">⚡</div>Charge d'entraînement</div>
+    </div>
+
+    <a class="btn" id="authBtn" href="#">🔗 Autoriser l'accès via Nolio</a>
+    <p class="note">Tu seras redirigé vers Nolio pour te connecter à ton compte.<br>
+    Tes données ne sont <strong>jamais partagées</strong> avec des tiers.<br>
+    Tu peux révoquer l'accès à tout moment depuis <a href="https://www.nolio.io" target="_blank">nolio.io</a>.</p>
+  </div>
+
+  <!-- ÉCRAN 2 : Chargement -->
+  <div class="screen" id="screenLoad">
+    <div class="spin"></div>
+    <p class="loading-txt" id="loadTxt">Connexion en cours...</p>
+  </div>
+
+  <!-- ÉCRAN 3 : Succès -->
+  <div class="screen" id="screenOk">
+    <div class="success-icon">✅</div>
+    <div class="success-name" id="okName">Connexion réussie !</div>
+    <p class="success-msg">Tes données sont maintenant accessibles à ton entraîneur. Tu peux fermer cette page.</p>
+    <div class="success-badge">✓ Synchronisation active</div>
+  </div>
+
+  <!-- ÉCRAN 4 : Erreur -->
+  <div class="screen" id="screenErr">
+    <div class="error-icon">❌</div>
+    <h1 style="font-size:20px;margin-bottom:8px">Une erreur s'est produite</h1>
+    <p class="sub" id="errMsg">Impossible de finaliser la connexion.</p>
+    <a class="btn" href="autoriser.html">Réessayer</a>
+  </div>
+
+</div>
+
+<div class="footer">Pôle Performance · Nice Métropole Côte d'Azur<br>Powered by Nolio</div>
+
+<script>
+// ── CONFIG — à ne pas modifier ──────────────────────────────
+const CLIENT_ID = 'LDiR5WZ4opOj8mURtmByci5MppyfqdvQEzp7Aye8';
+const CLIENT_SECRET = 'Uvvoh9La99720QIFVPSLNHrRrfKAj6K3r3ZvlPUN9c8Dleghmxc9eGcGCUpyglKHVtZ7zV0YeNhON1YicYwlr3XigjyHmrmOi7mXT5Umgxfiok2A3E3yYvSOwQFU919R';
+const CALLBACK_URL = location.origin + location.pathname;
+// ────────────────────────────────────────────────────────────
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function ag(url, tok) {
+  return fetch(url, {headers:{'Authorization':`Bearer ${tok}`,'Accept':'application/json'}})
+    .then(r => { if(!r.ok) throw new Error(r.status); return r.json(); });
+}
+
+async function handleCallback(code) {
+  show('screenLoad');
+  document.getElementById('loadTxt').textContent = 'Finalisation de la connexion...';
+
+  try {
+    const creds = btoa(`${CLIENT_ID}:${CLIENT_SECRET}`);
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: CALLBACK_URL
+    });
+
+    const r = await fetch('https://www.nolio.io/api/token/', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${creds}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: body.toString()
+    });
+
+    if (!r.ok) throw new Error('Échange de token échoué : ' + r.status);
+    const d = await r.json();
+
+    // Récupérer le nom du coureur
+    document.getElementById('loadTxt').textContent = 'Récupération du profil...';
+    let name = 'Coureur';
+    try {
+      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
+      name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Coureur';
+    } catch(e) {}
+
+    // Récupérer l'ID Nolio de l'athlète
+    let athleteId = String(Date.now()); // fallback
+    try {
+      const user = await ag('https://www.nolio.io/api/get/user/', d.access_token);
+      if (user && user.id) athleteId = String(user.id);
+    } catch(e) {}
+
+    // Récupérer la team depuis l'URL (?team=NK ou ?team=NMCA)
+    const urlTeam = new URLSearchParams(location.search).get('team') || 'NK';
+
+    // Envoyer le token au Worker Cloudflare (toujours disponible, pas besoin que l'ordi du coach soit allumé)
+    document.getElementById('loadTxt').textContent = 'Enregistrement...';
+    try {
+      await fetch('https://nolio-tokens.knecht-noah.workers.dev/token', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          athlete_id:    athleteId,
+          name:          name,
+          team:          urlTeam,
+          access_token:  d.access_token,
+          refresh_token: d.refresh_token,
+          expires_in:    d.expires_in || 86400
+        })
+      });
+    } catch(e) {
+      // Le serveur local n'est pas lancé — on continue quand même (token perdu)
+      console.warn('Serveur local inaccessible:', e.message);
+    }
+
+    // Afficher succès
+    document.getElementById('okName').textContent = `Bonjour ${name} !`;
+    show('screenOk');
+
+  } catch(e) {
+    document.getElementById('errMsg').textContent = e.message;
+    show('screenErr');
+  }
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+window.onload = () => {
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+
+  if (code) {
+    // On revient du callback Nolio
+    history.replaceState({}, '', location.pathname);
+    handleCallback(code);
+    return;
+  }
+
+  // Construire le lien d'autorisation Nolio
+  const state = Math.random().toString(36).substring(2);
+  sessionStorage.setItem('oauth_state', state);
+  const authParams = new URLSearchParams({
+    response_type: 'code',
+    client_id: CLIENT_ID,
+    redirect_uri: CALLBACK_URL,
+    state: state
+  });
+  const authUrl = `https://www.nolio.io/api/authorize/?${authParams.toString()}`;
+  document.getElementById('authBtn').href = authUrl;
+
+  show('screenAsk');
+};
+</script>
+</body>
+</html>
