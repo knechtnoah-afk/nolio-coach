@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pôle Performance — Coach</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Supabase supprimé — architecture data.json statique -->
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;700&display=swap');
 :root{
@@ -364,18 +364,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--tx);min-hei
 const CALLBACK_URL = 'https://knechtnoah-afk.github.io/nolio-coach/';
 const CLIENT_ID = 'LDiR5WZ4opOj8mURtmByci5MppyfqdvQEzp7Aye8';
 const CLIENT_SECRET = 'wJJhQDoBDoKzrfrx5stwaQFia4KTrqyhzfeVKBiC0Svk7tkszN24JgHpTRXJw0f1oYRZlerFLDXiecREioGYH26ItEv2tzDohADdgWg5klatTHUWLTgace8q00EpzJEk';
-const SB_URL = 'https://gklrzzpqwhbgnnbveeiw.supabase.co';
-const SB_KEY = 'sb_publishable__ZZcrBgDxLJ6fffxAKJzoQ_TE3D5fTz';
+// DATA_URL : fichier statique généré chaque nuit par le script Python sur l'ordi du coach
+const DATA_URL = 'https://knechtnoah-afk.github.io/nolio-coach/data.json';
 
 const TEAMS = {
   NK: { name: 'Noah Knecht', subtitle: 'Équipe personnelle', pw: 'EquipeNK', emoji: '⚡', color: '#3b82f6' },
   NMCA: { name: 'Nice Métropole Côte d\'Azur', subtitle: 'Pôle Performance', pw: 'NMCA2026', emoji: '🏆', color: '#6366f1' }
 };
 
-const { createClient } = supabase;
-const db = createClient(SB_URL, SB_KEY);
-
+// Plus de Supabase — les tokens sont gérés localement par le script Python
 let tokens = {}, athletes = [], summaries = {};
+// Cache des données statiques chargées depuis data.json
+let staticData = null;
 let period = 'week', offset = 0, activeTab = 'all';
 let charts = {}, currentAid = null;
 let currentTeam = null;
@@ -502,37 +502,22 @@ async function debugMetrics() {
 }
 
 async function switchAthleteTeam(btn, aid) {
-  const current = tokens[aid]?.team || "NK";
-  const newTeam = current === "NK" ? "NMCA" : "NK";
-  const teamNames = {NK:"Noah Knecht",NMCA:"Nice Métropole"};
-  btn.textContent = "⏳...";
-  btn.disabled = true;
-  try {
-    const { error } = await db.from("athlete_tokens").update({ team: newTeam }).eq("athlete_id", aid);
-    if (error) throw error;
-    tokens[aid].team = newTeam;
-    btn.textContent = "✅ " + teamNames[newTeam];
-    setTimeout(() => { btn.textContent = "⇄ → " + (newTeam === "NMCA" ? "NK" : "NMCA"); btn.disabled = false; }, 1500);
-    toast("✅ " + (tokens[aid]?.name||"Coureur") + " déplacé vers " + teamNames[newTeam]);
-  } catch(e) {
-    btn.textContent = "❌ Erreur";
-    btn.disabled = false;
-  }
+  // La gestion des équipes se fait maintenant dans tokens.json sur l'ordi du coach
+  toast('⚠️ Modifie le champ "team" dans tokens.json via le script de config', 'var(--or)');
 }
 
-// ── SUPABASE ──────────────────────────────────────────────────
-async function saveToDB(aid, name, at, rt, ea, team) {
-  await db.from('athlete_tokens').upsert({athlete_id:aid,name,access_token:at,refresh_token:rt,expires_at:ea,team:team||'NK'},{onConflict:'athlete_id'});
+// ── DATA.JSON — CHARGEMENT STATIQUE ───────────────────────────
+// Les données sont générées chaque nuit par le script Python nolio_sync.py
+// qui tourne sur l'ordi du coach et pousse data.json sur GitHub Pages.
+async function loadStaticData() {
+  const r = await fetch(DATA_URL + '?t=' + Date.now()); // cache-bust
+  if (!r.ok) throw new Error('data.json introuvable (' + r.status + ') — le script de sync a-t-il tourné ?');
+  return r.json();
 }
-async function loadFromDB(team) {
-  const { data } = await db.from('athlete_tokens').select('*').eq('team', team||'NK');
-  const t = {};
-  (data||[]).forEach(r => { t[r.athlete_id] = {access_token:r.access_token,refresh_token:r.refresh_token,expires_at:new Date(r.expires_at).getTime(),name:r.name,team:r.team}; });
-  return t;
-}
-async function updateDB(aid, at, rt, ea) {
-  await db.from('athlete_tokens').update({access_token:at,refresh_token:rt,expires_at:ea}).eq('athlete_id',aid);
-}
+// Stub — les tokens OAuth ne sont plus gérés dans le dashboard
+// Ils sont gérés exclusivement par nolio_sync.py sur l'ordi du coach
+async function saveToDB() {}
+async function updateDB() {}
 
 // ── API ────────────────────────────────────────────────────────
 async function xchange(code) {
@@ -623,11 +608,33 @@ function sportE(id){const m={2:'🏃',52:'🏔️',14:'🚴',15:'🚵',19:'🏊'
 // ── DASHBOARD ──────────────────────────────────────────────────
 async function startDash() {
   if (!currentTeam) { showTeamSelector(); return; }
-  showLoad('Chargement...');
+  showLoad('Chargement des données...');
   const team = TEAMS[currentTeam];
-  tokens = await loadFromDB(currentTeam);
   document.getElementById('dashTitle').textContent = `${team.emoji} ${team.name}`;
   document.getElementById('dashSubtitle').textContent = team.subtitle;
+  try {
+    staticData = await loadStaticData();
+    // Reconstruire l'objet tokens à partir des athletes dans data.json
+    // (uniquement pour la team courante, pour les appels directs type loadLaps)
+    tokens = {};
+    (staticData.athletes || [])
+      .filter(a => a.team === currentTeam)
+      .forEach(a => {
+        tokens[a.athlete_id] = {
+          access_token: a.access_token,
+          refresh_token: a.refresh_token,
+          expires_at: a.expires_at ? new Date(a.expires_at).getTime() : 0,
+          name: a.name,
+          team: a.team
+        };
+      });
+  } catch(e) {
+    document.getElementById('errBox').textContent = '⚠️ ' + e.message;
+    document.getElementById('errBox').style.display = 'block';
+    hide(['loadScreen']);
+    document.getElementById('dashPage').style.display = 'block';
+    return;
+  }
   updLbl();
   await loadAll();
 }
@@ -637,83 +644,92 @@ function nav(d){offset+=d;if(offset>0)offset=0;updLbl();showLoad('Chargement...'
 function setTab(t){activeTab=t;document.querySelectorAll('.dtab').forEach(x=>x.classList.remove('active'));document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1)).classList.add('active');document.getElementById('trendsDiv').style.display=t==='trends'?'block':'none';document.getElementById('grid').style.display=t==='trends'?'none':'grid';if(t==='trends')renderTrends();else renderCards();}
 function toast(msg,color='var(--gn)'){const el=document.getElementById('toast');el.textContent=msg;el.style.background=color;el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 
-// ── LOAD DATA ──────────────────────────────────────────────────
+// ── LOAD DATA — depuis data.json statique ──────────────────────
+// data.json est généré chaque nuit par nolio_sync.py sur l'ordi du coach
+// Structure: { generated_at, athletes: [{ athlete_id, name, team, access_token, ...,
+//   trainings_90d, trainings_prev_30d, rmssd_30d, pwr_records, sleep_daily }] }
 async function loadAll() {
   try {
-    const ids=Object.keys(tokens); athletes=[];summaries={};
-    const{from,to}=getRange(period,offset);
-    const{from:pf,to:pt}=getRange(period,offset-1);
-    // 3 derniers mois glissants pour courbe de forme (toujours depuis aujourd'hui)
-    const now=new Date();
-    const qf=new Date(now); qf.setMonth(qf.getMonth()-3); qf.setHours(0,0,0,0);
-    // Fenêtre fixe 30j glissants pour calcul forme/fatigue (indépendant de la période affichée)
-    const fix30to=new Date(now);
-    const fix30from=new Date(now); fix30from.setDate(fix30from.getDate()-30); fix30from.setHours(0,0,0,0);
-    const fix30prev=new Date(fix30from); fix30prev.setDate(fix30prev.getDate()-30);
-    const lim=period==='quarter'?200:period==='month'?100:30;
+    if (!staticData) staticData = await loadStaticData();
+    athletes = []; summaries = {};
 
-    await Promise.all(ids.map(async aid=>{
-      try{
-        const tok=await getTok(aid);if(!tok)return;
-        const[cur,prev,rmssd,fix30cur,fix30prev2,curQ,pwrRecords]=await Promise.all([
-          ag(`https://www.nolio.io/api/get/training/?from=${fd(from)}&to=${fd(to)}&limit=${lim}`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/training/?from=${fd(pf)}&to=${fd(pt)}&limit=${lim}`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/hrv/rmssd/?from=${fd(fix30from)}&to=${fd(fix30to)}&limit=90`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/training/?from=${fd(fix30from)}&to=${fd(fix30to)}&limit=100`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/training/?from=${fd(fix30prev)}&to=${fd(fix30from)}&limit=100`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/training/?from=${fd(qf)}&to=${fd(now)}&limit=200`,tok).catch(()=>[]),
-          ag(`https://www.nolio.io/api/get/records/?cat=ppr&record_type=time&items=180,300,720,1200&limit=5`,tok).catch(()=>[])
-        ]);
+    const { from, to } = getRange(period, offset);
+    const { from: pf, to: pt } = getRange(period, offset - 1);
+    const now = new Date();
+    const fix30to = new Date(now);
+    const fix30from = new Date(now); fix30from.setDate(fix30from.getDate() - 30); fix30from.setHours(0,0,0,0);
+    const fix30prev = new Date(fix30from); fix30prev.setDate(fix30prev.getDate() - 30);
+    const qf = new Date(now); qf.setMonth(qf.getMonth() - 3); qf.setHours(0,0,0,0);
 
-        // Sleep — on cherche dans les métriques et les séances
-        // Sommeil — via /get/user/meta/ qui regroupe toutes les métriques par type
-        // athlete_id obligatoire sinon on interroge le compte coach
-        // La réponse contient un bloc "sleep" avec data: [{id, date, value(sec), source}]
-        // et aussi sl_score, sl_light, sl_deep, sl_rem, sl_awake pour les phases
-        let sleepVal=null, sleepDaily=[];
-        try{
-          const metaFrom=new Date(from); metaFrom.setDate(metaFrom.getDate()-7); // un peu plus large pour ne pas rater
-          const metaResp=await ag(`https://www.nolio.io/api/get/user/meta/?from=${fd(metaFrom)}&to=${fd(to)}`,tok).catch(()=>null);
-          console.log(`[${tokens[aid]?.name||aid}] user/meta sleep:`, metaResp?.sleep?.data?.length??'absent');
-          if(metaResp?.sleep?.data?.length>0){
-            const inPeriod=metaResp.sleep.data.filter(x=>{
-              if(!x.value||x.value<=0)return false;
-              const d=new Date(x.date);
-              return d>=from&&d<=to;
-            });
-            const validData=inPeriod.length>0?inPeriod:metaResp.sleep.data.filter(x=>x.value>0).slice(0,7);
-            if(validData.length>0){
-              sleepDaily=validData.map(x=>({
-                date:x.date,
-                hours:x.value/3600,
-                source:x.source,
-                score:metaResp.sl_score?.data?.find(s=>s.date===x.date)?.value||null,
-                deep:metaResp.sl_deep?.data?.find(s=>s.date===x.date)?.value||null,
-                rem:metaResp.sl_rem?.data?.find(s=>s.date===x.date)?.value||null,
-                light:metaResp.sl_light?.data?.find(s=>s.date===x.date)?.value||null,
-              }));
-              sleepVal=sleepDaily.reduce((a,x)=>a+x.hours,0)/sleepDaily.length;
-            }
+    const athleteData = (staticData.athletes || []).filter(a => a.team === currentTeam);
+
+    for (const a of athleteData) {
+      const aid = a.athlete_id;
+      try {
+        // Filtrer les séances par période depuis le cache 90j
+        const allTrainings = a.trainings_90d || [];
+        const cur = allTrainings.filter(t => {
+          const d = new Date(t.date || t.start_date);
+          return d >= from && d <= to;
+        });
+        const prev = allTrainings.filter(t => {
+          const d = new Date(t.date || t.start_date);
+          return d >= pf && d <= pt;
+        });
+        const fix30cur = allTrainings.filter(t => {
+          const d = new Date(t.date || t.start_date);
+          return d >= fix30from && d <= fix30to;
+        });
+        const fix30prev2 = (a.trainings_prev_30d || []);
+        const curQ = allTrainings.filter(t => {
+          const d = new Date(t.date || t.start_date);
+          return d >= qf && d <= now;
+        });
+
+        const rmssd = a.rmssd_30d || [];
+        const pwrRecords = a.pwr_records || [];
+
+        // Sommeil depuis data.json
+        let sleepVal = null, sleepDaily = [];
+        if (a.sleep_daily && a.sleep_daily.length > 0) {
+          const inPeriod = a.sleep_daily.filter(x => {
+            if (!x.hours || x.hours <= 0) return false;
+            const d = new Date(x.date);
+            return d >= from && d <= to;
+          });
+          const validData = inPeriod.length > 0 ? inPeriod : a.sleep_daily.filter(x => x.hours > 0).slice(0, 7);
+          if (validData.length > 0) {
+            sleepDaily = validData;
+            sleepVal = validData.reduce((s, x) => s + x.hours, 0) / validData.length;
           }
-        }catch(e){console.warn('Sleep meta error:',e.message);}
+        }
 
-        let hrVal=null;
-        try{const hm=await ag('https://www.nolio.io/api/get/metric/?id=9',tok).catch(()=>null);if(hm&&hm.value)hrVal=hm.value;}catch(e){}
-        if(!hrVal&&Array.isArray(cur)&&cur.length>0&&cur[0].rest_hr_user)hrVal=cur[0].rest_hr_user;
+        // FC repos
+        let hrVal = a.rest_hr || null;
+        if (!hrVal && cur.length > 0 && cur[0].rest_hr_user) hrVal = cur[0].rest_hr_user;
 
-        summaries[aid]=buildSum(aid,cur||[],prev||[],rmssd||[],sleepVal,hrVal,curQ||[],from,to,sleepDaily,Array.isArray(pwrRecords)?pwrRecords:[],fix30cur||[],fix30prev2||[]);
-        summaries[aid].sleepErr=sleepErrMsg;
-      }catch(e){console.error(aid,e);}
-    }));
+        summaries[aid] = buildSum(aid, cur, prev, rmssd, sleepVal, hrVal, curQ, from, to, sleepDaily, pwrRecords, fix30cur, fix30prev2);
+        summaries[aid].sleepErr = null;
+        // Injecter l'analyse IA pré-générée si disponible
+        if (a.ai_summary) summaries[aid].aiSummary = a.ai_summary;
+      } catch(e) { console.error(aid, e); }
+    }
 
-    await genAI();
+    // Afficher info mise à jour
+    if (staticData.generated_at) {
+      const genDate = new Date(staticData.generated_at);
+      const diff = Math.round((Date.now() - genDate) / 3600000);
+      const msg = diff < 1 ? 'données à jour' : `données mises à jour il y a ${diff}h`;
+      toast(`✅ ${msg}`, 'var(--ac)');
+    }
+
     renderDash();
-  }catch(e){
-    document.getElementById('errBox').textContent='Erreur : '+e.message;
-    document.getElementById('errBox').style.display='block';
+  } catch(e) {
+    document.getElementById('errBox').textContent = 'Erreur : ' + e.message;
+    document.getElementById('errBox').style.display = 'block';
     showLoad('');
     hide(['loadScreen']);
-    document.getElementById('dashPage').style.display='block';
+    document.getElementById('dashPage').style.display = 'block';
   }
 }
 
