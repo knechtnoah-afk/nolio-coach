@@ -669,20 +669,20 @@ async function loadAll() {
         // Filtrer les séances par période depuis le cache 90j
         const allTrainings = a.trainings_90d || [];
         const cur = allTrainings.filter(t => {
-          const d = new Date(t.date || t.start_date);
+          const d = new Date(t.date_start || t.date || t.start_date);
           return d >= from && d <= to;
         });
         const prev = allTrainings.filter(t => {
-          const d = new Date(t.date || t.start_date);
+          const d = new Date(t.date_start || t.date || t.start_date);
           return d >= pf && d <= pt;
         });
         const fix30cur = allTrainings.filter(t => {
-          const d = new Date(t.date || t.start_date);
+          const d = new Date(t.date_start || t.date || t.start_date);
           return d >= fix30from && d <= fix30to;
         });
         const fix30prev2 = (a.trainings_prev_30d || []);
         const curQ = allTrainings.filter(t => {
-          const d = new Date(t.date || t.start_date);
+          const d = new Date(t.date_start || t.date || t.start_date);
           return d >= qf && d <= now;
         });
 
@@ -1155,10 +1155,15 @@ async function openAthlete(aid) {
   document.body.style.overflow='hidden';
 
   try {
-    const tok=await getTok(aid);if(!tok)throw new Error('Token invalide');
+    // Données lues dans data.json (synchro nocturne via le compte coach) — plus de token coureur
+    const tok=null;
+    const sa=(staticData&&staticData.athletes||[]).find(a=>String(a.athlete_id)===String(aid));
+    if(!sa)throw new Error('Coureur absent de data.json');
+    const allTr=[...(sa.trainings_90d||[]),...(sa.trainings_prev_30d||[])];
+    const fdl=x=>`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+    const inRange=(w,f,t)=>{const d=w.date_start||'';return d>=fdl(f)&&d<=fdl(t);};
     const{from,to}=getRange(period,offset);
-    const lim=period==='quarter'?200:period==='month'?100:30;
-    const workouts=await ag(`https://www.nolio.io/api/get/training/?from=${fd(from)}&to=${fd(to)}&limit=${lim}`,tok).catch(()=>[]);
+    const workouts=allTr.filter(w=>inRange(w,from,to));
 
     // Classification séances
     const classifyWorkout = (w) => {
@@ -1176,7 +1181,7 @@ async function openAthlete(aid) {
 
     // 3 mois pour courbe de forme
     const{from:qf}=getRange('quarter',offset);
-    const allQ=await ag(`https://www.nolio.io/api/get/training/?from=${fd(qf)}&to=${fd(to)}&limit=200`,tok).catch(()=>[]);
+    const allQ=allTr.filter(w=>inRange(w,qf,to));
     const fc=buildFormeCurve(allQ,from);
 
     renderModal(aid,name,allW,intensityWorkouts,enduranceWorkouts,fc,tok,summaries[aid]?.sleepDaily||[]);
@@ -1509,12 +1514,19 @@ function renderCPChart(aid, cpPoints, cp, wPrime) {
   });
 }
 
+// Détail séance (tours / courbes) via le Worker Cloudflare, qui utilise le token coach
+const WORKER_URL='https://nolio-tokens.knecht-noah.workers.dev';
+async function nolioProxy(kind,id,aid){
+  const r=await fetch(`${WORKER_URL}/nolio?kind=${kind}&id=${encodeURIComponent(id)}&athlete_id=${encodeURIComponent(aid)}`);
+  if(!r.ok)throw new Error('Erreur '+r.status);
+  return r.json();
+}
 async function loadLaps(aid,idx,nolioId,tok){
   const btn=document.getElementById(`blaps_${aid}_${idx}`);
   const div=document.getElementById(`laps_${aid}_${idx}`);
   btn.textContent='⏳...';btn.disabled=true;
   try{
-    const data=await ag(`https://www.nolio.io/api/get/training/info/?id=${nolioId}`,tok);
+    const data=await nolioProxy('info',nolioId,aid);
     let html='';
     if(data.description){
       html+=`<div style="font-size:11px;color:#cbd5e1;background:#161b25;padding:9px;border-radius:6px;margin-bottom:8px;line-height:1.5;white-space:pre-wrap">📝 ${data.description}</div>`;
@@ -1594,7 +1606,7 @@ async function loadStreams(aid,idx,nolioId,tok){
   const div=document.getElementById(`strms_${aid}_${idx}`);
   btn.textContent='⏳...';btn.disabled=true;
   try{
-    const data=await ag(`https://www.nolio.io/api/get/training/streams/?id=${nolioId}`,tok);
+    const data=await nolioProxy('streams',nolioId,aid);
     let html='';
     if(data.stream_heartrate?.length>0) html+=`<div style="height:85px;position:relative;margin-bottom:6px"><canvas id="shr_${aid}_${idx}"></canvas></div>`;
     if(data.stream_watts?.length>0) html+=`<div style="height:75px;position:relative"><canvas id="spwr_${aid}_${idx}"></canvas></div>`;
