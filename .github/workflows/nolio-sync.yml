@@ -1,0 +1,23 @@
+name: Synchro Nolio
+
+on:
+  schedule:
+    # Heures en UTC : 03:00 UTC = 4h a Paris (hiver), 18:00 UTC = 19h a Paris (hiver)
+    - cron: "0 3 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Synchro Nolio vers data.json
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          NOLIO_CLIENT_SECRET: ${{ secrets.NOLIO_CLIENT_SECRET }}
+        run: python sync/sync_cloud.py
