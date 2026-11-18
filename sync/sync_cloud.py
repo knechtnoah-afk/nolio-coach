@@ -906,8 +906,8 @@ def main():
         data = fetch_athlete(token, aid, is_coach, name)
         kept, new = add_resumes(data["trainings_90d"], prev_resumes)
         print("    resumes de sorties : " + str(kept) + " repris, " + str(new) + " nouveaux")
-        if data["planned_notes"]:
-            print("    " + str(len(data["planned_notes"])) + " notes prevues lues")
+        n_eff = sum(1 for t in data["trainings_90d"] if t.get("effic"))
+        print("    notes prevues : " + str(len(data["planned_notes"])) + " | sorties avec efficacite (NP/FC) : " + str(n_eff))
         print("    " + str(len(data["trainings_90d"])) + " seances | " + str(len(data["rmssd_30d"])) +
               " RMSSD | " + str(len(data["sleep_daily"])) + " nuits")
 
@@ -924,6 +924,8 @@ def main():
               "notes_status": {"ok": NOTES_STATE["ok"], "msg": NOTES_STATE["msg"]}}
     out = json.dumps(output, ensure_ascii=False, separators=(",", ":"))
     enc = encrypt_json(out)
+    print("\nNotes prevues (API v2) : " + ("OK" if NOTES_STATE["ok"] else ("indisponibles - " + NOTES_STATE["msg"] if NOTES_STATE["ok"] is False else "aucun appel")) +
+          " | coureurs v2 reconnus : " + str(len(NOTES_STATE["ids"] or {})) + " | analyses de fichiers restantes : " + str(_budget["left"]))
     print("\ndonnees : " + str(len(result)) + " fiches | " + str(len(out) // 1024) + " Ko -> chiffre " + str(len(enc) // 1024) + " Ko")
 
     print("Push GitHub (fichier chiffre)...")
