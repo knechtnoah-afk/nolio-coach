@@ -783,34 +783,28 @@ def v2_athlete_ids(token):
     return ids
 
 
-def fetch_planned_notes(token, name, is_coach, from_date, to_date):
-    if NOTES_STATE["ok"] is False:
+def fetch_planned_notes(token, p, from_date, to_date):
+    """Notes du calendrier prevu (API v1 get/planned/note/) : plan ecrit en texte par les entraineurs hors Nolio."""
+    raw = nolio_get("get/planned/note/", token, p({"from": fmt(from_date), "to": fmt(to_date), "limit": 300}))
+    if raw is None:
+        NOTES_STATE["ok"] = NOTES_STATE["ok"] or False
         return []
-    prm = {"date_from": fmt(from_date), "date_to": fmt(to_date), "limit": 100}
-    if not is_coach:
-        uid = v2_athlete_ids(token).get(_norm_name(name))
-        if not uid:
-            return []
-        prm["athlete"] = uid
-    out, after = [], None
-    for _ in range(10):
-        if after:
-            prm["starting_after"] = after
-        res, err = _v2_get("planned/notes/", token, prm)
-        if err:
-            if err.startswith("HTTP 401") or "scope" in err:
-                NOTES_STATE["ok"], NOTES_STATE["msg"] = False, "planned/notes: " + err
-            print("    WARN notes : " + err[:90])
-            break
-        NOTES_STATE["ok"] = True
-        rows = (res or {}).get("data") or []
-        for r in rows:
-            out.append({"date_start": r.get("date_start"), "date_end": r.get("date_end"),
-                        "name": _txt(r.get("name"))[:120], "text": _txt(r.get("description"))[:600],
-                        "type": r.get("note_type")})
-        if not (res or {}).get("has_more") or not rows:
-            break
-        after = rows[-1].get("id")
+    NOTES_STATE["ok"] = True
+    if isinstance(raw, dict):
+        raw = raw.get("data") or raw.get("notes") or []
+    if raw and not NOTES_STATE.get("sample"):
+        NOTES_STATE["sample"] = sorted(raw[0].keys()) if isinstance(raw[0], dict) else str(type(raw[0]))
+    out = []
+    for r in raw if isinstance(raw, list) else []:
+        if not isinstance(r, dict):
+            continue
+        typ = r.get("note_type") or r.get("type")
+        if isinstance(typ, dict):
+            typ = typ.get("slug") or typ.get("name")
+        out.append({"date_start": r.get("date_start") or r.get("date"), "date_end": r.get("date_end"),
+                    "name": _txt(r.get("name"))[:120],
+                    "text": _txt(r.get("description") or r.get("comment") or r.get("text"))[:600],
+                    "type": (str(typ).lower() if typ else None)})
     return out
 
 
@@ -831,7 +825,7 @@ def fetch_athlete(token, athlete_id, is_coach, name=""):
     pwr_records = nolio_get("get/records/", token, p({"cat": "ppr", "record_type": "time", "items": "180,300,720,1200"})) or []
 
     planned = fetch_planned(token, p, from_date, now + timedelta(days=14))
-    planned_notes = fetch_planned_notes(token, name, is_coach, from_date, now + timedelta(days=14))
+    planned_notes = fetch_planned_notes(token, p, from_date, now + timedelta(days=14))
 
     sleep_daily = []
     meta = nolio_get("get/user/meta/", token, p({"from": fmt(now - timedelta(days=35)), "to": fmt(now), "limit": 60}))
@@ -924,8 +918,8 @@ def main():
               "notes_status": {"ok": NOTES_STATE["ok"], "msg": NOTES_STATE["msg"]}}
     out = json.dumps(output, ensure_ascii=False, separators=(",", ":"))
     enc = encrypt_json(out)
-    print("\nNotes prevues (API v2) : " + ("OK" if NOTES_STATE["ok"] else ("indisponibles - " + NOTES_STATE["msg"] if NOTES_STATE["ok"] is False else "aucun appel")) +
-          " | coureurs v2 reconnus : " + str(len(NOTES_STATE["ids"] or {})) + " | analyses de fichiers restantes : " + str(_budget["left"]))
+    print("\nNotes prevues : " + ("OK" if NOTES_STATE["ok"] else "indisponibles") + " | champs : " + str(NOTES_STATE.get("sample")) +
+          " | analyses de fichiers restantes : " + str(_budget["left"]))
     print("\ndonnees : " + str(len(result)) + " fiches | " + str(len(out) // 1024) + " Ko -> chiffre " + str(len(enc) // 1024) + " Ko")
 
     print("Push GitHub (fichier chiffre)...")
