@@ -219,6 +219,9 @@ def team_code(team_name):
 # "30min Z2 (212W) - 6x 14min a 272W (Z3) avec 6min30 recup - 30min Z2 (221W)"
 RESUME_VERSION = 1
 MAX_NEW_RESUMES = 150   # analyses nouvelles max par synchro (le reste a la suivante)
+EFFORTS_VERSION = 1     # sprints / blocs de force (pour les consignes ecrites en note)
+EFFORTS_DAYS = 21       # calcules seulement sur les sorties recentes
+EFFIC_VERSION = 1       # NP / FC moyenne / derive cardiaque (graphique efficacite)
 VELO_WORDS = ("velo", "v\u00e9lo", "home trainer", "vtt", "gravel", "cycl", "bike", "route", "piste", "zwift")
 
 BLOCK = 5  # secondes par bloc
@@ -440,6 +443,54 @@ def _fitdecode():
 
 def fit_power_1hz(raw):
     """Courbe de puissance 1 point/seconde depuis un fichier .fit (pauses retirees)."""
+    return fit_streams_1hz(raw)[0]
+
+
+def efficacite(watts, hr, ftp):
+    """Efficacite aerobie d'une sortie : NP, FC moyenne, EF = NP/FC, derive cardiaque (Pa:Hr) et IF.
+    None si pas assez de FC."""
+    n = len(watts)
+    if n < 1200 or not hr or len(hr) != n:
+        return None
+    ok = [i for i in range(n) if hr[i] > 0]
+    if len(ok) < 0.7 * n:
+        return None
+
+    def np_(a, b):
+        w = watts[a:b]
+        if len(w) < 60:
+            return None
+        acc, r30, s4 = 0.0, [], 0.0
+        for i, v in enumerate(w):
+            acc += v
+            if i >= 30:
+                acc -= w[i - 30]
+            if i >= 29:
+                s4 += (acc / 30.0) ** 4
+                r30.append(1)
+        return (s4 / max(len(r30), 1)) ** 0.25 if r30 else None
+
+    def hr_(a, b):
+        h = [hr[i] for i in range(a, b) if hr[i] > 0]
+        return sum(h) / len(h) if h else None
+
+    NP, HR = np_(0, n), hr_(0, n)
+    if not NP or not HR:
+        return None
+    out = {"np": int(round(NP)), "hr": int(round(HR)), "ef": round(NP / HR, 3),
+           "if": round(NP / ftp, 3) if ftp else None, "dur": n}
+    # derive cardiaque : on ignore les 10 premieres minutes (echauffement), puis 1re moitie vs 2e moitie
+    a = 600 if n >= 3600 else 0
+    mid = a + (n - a) // 2
+    np1, np2, h1, h2 = np_(a, mid), np_(mid, n), hr_(a, mid), hr_(mid, n)
+    if np1 and np2 and h1 and h2:
+        e1, e2 = np1 / h1, np2 / h2
+        out["dec"] = round((e1 - e2) / e1 * 100, 1)
+    return out
+
+
+def fit_streams_1hz(raw):
+    """(puissance, cadence) 1 point/seconde depuis un fichier .fit (pauses retirees)."""
     import io
     fitdecode = _fitdecode()
     pts = []
@@ -452,24 +503,88 @@ def fit_power_1hz(raw):
             if ts is None:
                 continue
             pw = fr_.get_value("power", fallback=None)
-            pts.append((ts, pw))
+            cd = fr_.get_value("cadence", fallback=None)
+            hrv = fr_.get_value("heart_rate", fallback=None)
+            pts.append((ts, pw, cd, hrv))
     if not pts:
-        return []
-    with_pw = sum(1 for _, v in pts if v is not None)
+        return [], [], []
+    with_pw = sum(1 for p in pts if p[1] is not None)
     if with_pw < 0.5 * len(pts):
-        return []  # pas de capteur de puissance
+        return [], [], []  # pas de capteur de puissance
     pts.sort(key=lambda x: x[0])
-    out, prev = [], None
-    for ts, pw in pts:
+    out, cad, hrs, prev = [], [], [], None
+    for ts, pw, cd, hv in pts:
         v = float(pw or 0)
+        c = float(cd or 0)
+        h = float(hv or 0)
         if prev is not None:
             dt = int(round((ts - prev).total_seconds()))
             if dt <= 0:
                 continue
             if 1 < dt <= 5:
                 out.extend([v] * (dt - 1))
+                cad.extend([c] * (dt - 1))
+                hrs.extend([h] * (dt - 1))
         out.append(v)
+        cad.append(c)
+        hrs.append(h)
         prev = ts
+    return out, cad, hrs
+
+
+def efforts(watts, cad, ftp):
+    """Sprints (pic 5 s) et blocs de force (basse cadence) pour verifier les consignes ecrites en note.
+    Renvoie {"sp": [[minute, watts_5s], ...], "fo": [[minute, duree_s, rpm, watts], ...]}"""
+    out = {"sp": [], "fo": []}
+    if not watts or not ftp:
+        return out
+    n = len(watts)
+    # -- sprints : moyenne 5 s >= 1,5 x FTP, pics separes d'au moins 20 s
+    thr = 1.5 * ftp
+    s5 = [0.0] * n
+    acc = 0.0
+    for i in range(n):
+        acc += watts[i]
+        if i >= 5:
+            acc -= watts[i - 5]
+        s5[i] = acc / min(i + 1, 5)
+    i = 0
+    while i < n:
+        if s5[i] >= thr:
+            j, best, bi = i, s5[i], i
+            while j < n and s5[j] >= 0.7 * thr:
+                if s5[j] > best:
+                    best, bi = s5[j], j
+                j += 1
+            if not out["sp"] or bi - out["sp"][-1][2] >= 20:
+                out["sp"].append([round(bi / 60.0, 1), int(round(best)), bi])
+            i = j
+        else:
+            i += 1
+    for x in out["sp"]:
+        x.pop()
+    # -- force : cadence 25-72 rpm en pedalant, puissance >= 60 % FTP, bloc >= 90 s (trous <= 10 s toleres)
+    if cad and len(cad) == n and sum(1 for c in cad if c > 0) > 0.3 * n:
+        ok = [(25 <= cad[k] <= 72 and watts[k] >= 0.6 * ftp) for k in range(n)]
+        k = 0
+        while k < n:
+            if ok[k]:
+                a, gap, last = k, 0, k
+                while k < n and gap <= 10:
+                    if ok[k]:
+                        last, gap = k, 0
+                    else:
+                        gap += 1
+                    k += 1
+                b = last + 1
+                if b - a >= 90:
+                    cs = [cad[x] for x in range(a, b) if cad[x] > 0]
+                    ps = [watts[x] for x in range(a, b)]
+                    out["fo"].append([round(a / 60.0, 1), b - a, int(round(sum(cs) / max(len(cs), 1))),
+                                      int(round(sum(ps) / len(ps)))])
+                k = b
+            else:
+                k += 1
     return out
 
 
@@ -497,7 +612,9 @@ def load_previous_resumes():
         for a in json.loads(txt).get("athletes", []):
             for t in (a.get("trainings_90d") or []) + (a.get("trainings_prev_30d") or []):
                 if t.get("resume_v") == RESUME_VERSION and t.get("nolio_id"):
-                    prev[t["nolio_id"]] = (t.get("resume") or "", t.get("resume_detail") or "", t.get("resume_blocks") or [])
+                    prev[t["nolio_id"]] = (t.get("resume") or "", t.get("resume_detail") or "", t.get("resume_blocks") or [],
+                                           t.get("efforts") if t.get("efforts_v") == EFFORTS_VERSION else None,
+                                           t.get("effic") if t.get("effic_v") == EFFIC_VERSION else "absent")
     except Exception as e:
         print("  WARN lecture data.json precedent: " + str(e)[:80])
     return prev
@@ -507,12 +624,19 @@ _budget = {"left": MAX_NEW_RESUMES}
 
 def add_resumes(trainings, prev):
     ftp_fallback = next((t.get("ftp") for t in trainings if t.get("ftp")), None)
+    recent = (datetime.now(timezone.utc) - timedelta(days=EFFORTS_DAYS)).strftime("%Y-%m-%d")
     done = new = 0
     for t in sorted(trainings, key=lambda x: x.get("date_start") or "", reverse=True):
         tid = t.get("nolio_id")
+        want_eff = (t.get("date_start") or "") >= recent
         if tid in prev:
-            t["resume"], t["resume_detail"], t["resume_blocks"] = prev[tid]; t["resume_v"] = RESUME_VERSION; done += 1
-            continue
+            t["resume"], t["resume_detail"], t["resume_blocks"], eff, efc = prev[tid]; t["resume_v"] = RESUME_VERSION; done += 1
+            if eff is not None:
+                t["efforts"], t["efforts_v"] = eff, EFFORTS_VERSION
+            if efc != "absent":
+                t["effic"], t["effic_v"] = efc, EFFIC_VERSION
+            if (eff is not None or not want_eff) and efc != "absent":
+                continue
         if not is_velo(t) or (t.get("duration") or 0) < 1200 or not t.get("file_url") or not t.get("avg_watt"):
             continue
         ftp = t.get("ftp") or ftp_fallback
@@ -522,12 +646,17 @@ def add_resumes(trainings, prev):
         try:
             with urlopen(Request(t["file_url"], headers={"User-Agent": "nolio-sync"}), timeout=60) as r:
                 raw = r.read()
-            txt, det, blk = analyse(fit_power_1hz(raw), float(ftp))
+            watts, cad, hrs = fit_streams_1hz(raw)
+            if tid not in prev:
+                txt, det, blk = analyse(watts, float(ftp))
+                t["resume"], t["resume_detail"], t["resume_blocks"], t["resume_v"] = txt, det, blk, RESUME_VERSION
+                new += 1
+            if want_eff:
+                t["efforts"], t["efforts_v"] = efforts(watts, cad, float(ftp)), EFFORTS_VERSION
+            t["effic"], t["effic_v"] = efficacite(watts, hrs, float(ftp)), EFFIC_VERSION
         except Exception as e:
             print("    WARN resume " + str(tid) + ": " + str(e)[:80])
             continue
-        t["resume"], t["resume_detail"], t["resume_blocks"], t["resume_v"] = txt, det, blk, RESUME_VERSION
-        new += 1
     return done, new
 
 
@@ -604,8 +733,89 @@ def fetch_planned(token, p, from_date, to_date):
         })
     return out
 
+# -- NOTES PREVUES (coureurs dont l'entraineur ecrit le plan en note) ---------
+NOLIO_V2 = "https://www.nolio.io/api/v2/"
+NOTES_STATE = {"ok": None, "ids": None, "msg": ""}
+
+def _v2_get(path, token, params):
+    url = NOLIO_V2 + path + "?" + urlencode(params)
+    req = Request(url, headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+    try:
+        with urlopen(req, timeout=60) as r:
+            return json.loads(r.read() or b"null"), None
+    except HTTPError as e:
+        return None, "HTTP " + str(e.code) + " " + e.read().decode("utf-8", errors="ignore")[:160]
+    except Exception as e:
+        return None, str(e)[:120]
+
+
+def _txt(v):
+    return (v.get("untrusted_text") if isinstance(v, dict) else v) or ""
+
+
+def _norm_name(s):
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s or "").lower())
+    return " ".join("".join(c for c in s if unicodedata.category(c) != "Mn").split())
+
+
+def v2_athlete_ids(token):
+    """Nom -> usr_... (l'API v2 n'utilise pas les memes identifiants que la v1)."""
+    if NOTES_STATE["ids"] is not None:
+        return NOTES_STATE["ids"]
+    ids, after = {}, None
+    for _ in range(20):
+        prm = {"limit": 100}
+        if after:
+            prm["starting_after"] = after
+        res, err = _v2_get("me/athletes/", token, prm)
+        if err:
+            NOTES_STATE["ok"], NOTES_STATE["msg"] = False, "me/athletes: " + err
+            print("  Notes prevues indisponibles (" + err[:90] + ")")
+            break
+        rows = (res or {}).get("data") or []
+        for r in rows:
+            ids[_norm_name(_txt(r.get("name")))] = r.get("id")
+        if not (res or {}).get("has_more") or not rows:
+            break
+        after = rows[-1].get("id")
+    NOTES_STATE["ids"] = ids
+    return ids
+
+
+def fetch_planned_notes(token, name, is_coach, from_date, to_date):
+    if NOTES_STATE["ok"] is False:
+        return []
+    prm = {"date_from": fmt(from_date), "date_to": fmt(to_date), "limit": 100}
+    if not is_coach:
+        uid = v2_athlete_ids(token).get(_norm_name(name))
+        if not uid:
+            return []
+        prm["athlete"] = uid
+    out, after = [], None
+    for _ in range(10):
+        if after:
+            prm["starting_after"] = after
+        res, err = _v2_get("planned/notes/", token, prm)
+        if err:
+            if err.startswith("HTTP 401") or "scope" in err:
+                NOTES_STATE["ok"], NOTES_STATE["msg"] = False, "planned/notes: " + err
+            print("    WARN notes : " + err[:90])
+            break
+        NOTES_STATE["ok"] = True
+        rows = (res or {}).get("data") or []
+        for r in rows:
+            out.append({"date_start": r.get("date_start"), "date_end": r.get("date_end"),
+                        "name": _txt(r.get("name"))[:120], "text": _txt(r.get("description"))[:600],
+                        "type": r.get("note_type")})
+        if not (res or {}).get("has_more") or not rows:
+            break
+        after = rows[-1].get("id")
+    return out
+
+
 # -- DONNEES D'UN COUREUR -----------------------------------------------------
-def fetch_athlete(token, athlete_id, is_coach):
+def fetch_athlete(token, athlete_id, is_coach, name=""):
     now = datetime.now(timezone.utc)
     from_date = now - timedelta(days=DAYS_HISTORY)
     prev_from = from_date - timedelta(days=DAYS_PREV_30)
@@ -621,6 +831,7 @@ def fetch_athlete(token, athlete_id, is_coach):
     pwr_records = nolio_get("get/records/", token, p({"cat": "ppr", "record_type": "time", "items": "180,300,720,1200"})) or []
 
     planned = fetch_planned(token, p, from_date, now + timedelta(days=14))
+    planned_notes = fetch_planned_notes(token, name, is_coach, from_date, now + timedelta(days=14))
 
     sleep_daily = []
     meta = nolio_get("get/user/meta/", token, p({"from": fmt(now - timedelta(days=35)), "to": fmt(now), "limit": 60}))
@@ -651,6 +862,7 @@ def fetch_athlete(token, athlete_id, is_coach):
         "pwr_records": pwr_records,
         "sleep_daily": sleep_daily,
         "planned": planned,
+        "planned_notes": planned_notes,
         "rest_hr": rest_hr,
     }
 
@@ -691,9 +903,11 @@ def main():
             continue
 
         print("- " + name + " (" + "+".join(codes) + ")")
-        data = fetch_athlete(token, aid, is_coach)
+        data = fetch_athlete(token, aid, is_coach, name)
         kept, new = add_resumes(data["trainings_90d"], prev_resumes)
         print("    resumes de sorties : " + str(kept) + " repris, " + str(new) + " nouveaux")
+        if data["planned_notes"]:
+            print("    " + str(len(data["planned_notes"])) + " notes prevues lues")
         print("    " + str(len(data["trainings_90d"])) + " seances | " + str(len(data["rmssd_30d"])) +
               " RMSSD | " + str(len(data["sleep_daily"])) + " nuits")
 
@@ -706,7 +920,8 @@ def main():
         time.sleep(0.5)
 
     output = {"generated_at": datetime.now(timezone.utc).isoformat(), "athletes": result,
-              "debug_planned_sample": DEBUG_PLANNED.get("sample")}
+              "debug_planned_sample": DEBUG_PLANNED.get("sample"),
+              "notes_status": {"ok": NOTES_STATE["ok"], "msg": NOTES_STATE["msg"]}}
     out = json.dumps(output, ensure_ascii=False, separators=(",", ":"))
     enc = encrypt_json(out)
     print("\ndonnees : " + str(len(result)) + " fiches | " + str(len(out) // 1024) + " Ko -> chiffre " + str(len(enc) // 1024) + " Ko")

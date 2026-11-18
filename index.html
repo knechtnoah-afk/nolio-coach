@@ -1251,6 +1251,84 @@ const IA = (() => {
     return 'autre';
   }
 
+// ── Lecture des notes "Entraînement" écrites en texte libre ─────────
+function lireNote(n) {
+  const txt = `${n.text || ''}`.trim(), titre = `${n.name || ''}`.trim();
+  const brut = (txt || titre).replace(/\s+/g, ' ');
+  const norm = brut.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (n.type === 'rest' || /^(repos|off|rest)\b/.test(norm) && brut.length < 30) return { repos: true, items: [] };
+  if (['injury', 'sick', 'discomfort', 'unavailability', 'menstruation', 'goal', 'availability'].includes(n.type)) return null;
+  if (!brut) return null;
+  const SPORTS = [
+    ['natation', /piscine|natation|nage|swim/],
+    ['course', /\bcap\b|course a pied|footing|\brun\b|trail/],
+    ['muscu', /muscu|renfo|gainage|ppg|gym\b|salle/],
+    ['velo', /velo|route|vtt|gravel|home ?trainer|\bht\b|cx|cyclo|sortie|\bkm\b|endurance|z[1-7]\b|sprint|force|rpm/],
+  ];
+  // Découpe "70km Endurance + 1h de piscine" en plusieurs séances
+  const morceaux = norm.split(/\s\+\s|\bpuis\b|;|\bet\b(?=\s+\d)/).map(s => s.trim()).filter(Boolean);
+  const bruts = brut.split(/\s\+\s|\bpuis\b|;|\bet\b(?=\s+\d)/i).map(x => x.trim()).filter(Boolean);
+  const items = [];
+  for (const [mi, m] of morceaux.entries()) {
+    let sport = null;
+    for (const [s, re] of SPORTS) if (re.test(m)) { sport = s; break; }
+    if (!sport) sport = items.length ? 'autre' : 'velo';
+    const it = { sport, texte: m, aff: bruts.length === morceaux.length ? bruts[mi] : m, duree: null, dist: null, zone: null, consignes: [] };
+    // Durée : 2h30, 2h15/2h30 (on prend le bas de la fourchette), 45min, 1h
+    const d = m.match(/(\d{1,2})\s*h\s*(\d{2})?(?:\s*(?:\/|-|a)\s*(\d{1,2})\s*h\s*(\d{2})?)?(?!\s*(?:de|d')?\s*r[ée]cup)/);
+    const dm = m.match(/^(?:\D*?)(\d{2,3})\s*(?:min|mn|')(?!\s*(?:force|sprint|z\d))/);
+    if (d) it.duree = (+d[1]) * 3600 + (+(d[2] || 0)) * 60;
+    else if (dm && !/toutes|chaque/.test(m.slice(0, m.indexOf(dm[1])))) it.duree = +dm[1] * 60;
+    const k = m.match(/(\d{2,3}(?:[.,]\d)?)\s*km/); if (k) it.dist = parseFloat(k[1].replace(',', '.'));
+    const z = m.match(/\b(?:z|i)\s*([1-7])\b/); if (z) it.zone = +z[1];
+    else if (/endurance|endu|fond|tranquille|cool|recup/.test(m)) it.zone = 2;
+    // Consignes : "toutes les 30min sprint de 8/10s", "3 sprints de 8/10s", "toutes les 15min 3min force 50-60 rpm"
+    const every = m.match(/(?:toutes? les|chaque)\s*(\d{1,3})\s*(min|mn|'|h)/);
+    const evS = every ? (+every[1]) * (every[2] === 'h' ? 3600 : 60) : null;
+    const sp = m.match(/(?:(\d{1,2})\s*)?sprints?\s*(?:de\s*)?(\d{1,2})(?:\s*\/\s*(\d{1,2}))?\s*(?:s|sec|")/);
+    if (sp || /sprint/.test(m)) {
+      let n = null;
+      if (evS && it.duree) n = Math.max(1, Math.floor((it.duree - 1) / evS));
+      if (sp && sp[1]) { const blocs = (m.match(/(\d{1,2})\s*sprints?/g) || []).reduce((a, x) => a + parseInt(x), 0); n = blocs || +sp[1]; }
+      it.consignes.push({ type: 'sprint', n, d: sp ? +(sp[3] || sp[2]) : null });
+    }
+    const fo = m.match(/(\d{1,2})\s*(min|mn|')\s*(?:de\s*)?force(?:\s*(?:a|@)?\s*(\d{2,3})\s*(?:-|a|\/)\s*(\d{2,3})\s*rpm)?/);
+    if (fo || /force/.test(m)) {
+      let n = null;
+      if (evS && it.duree) n = Math.max(1, Math.floor((it.duree - 1) / evS));
+      const nx = m.match(/(\d{1,2})\s*[x×]\s*\d{1,2}\s*(?:min|mn|')\s*(?:de\s*)?force/); if (nx) n = +nx[1];
+      it.consignes.push({ type: 'force', n, d: fo ? +fo[1] * 60 : null, rpmLo: fo && fo[3] ? +fo[3] : null, rpmHi: fo && fo[4] ? +fo[4] : null });
+    }
+    // Séries "4x10min Z3", "6x15' LT1" : laissées à la lecture de titre existante (coeurPrevu)
+    items.push(it);
+  }
+  return { repos: false, items };
+}
+
+  // Notes du calendrier prévu → séances prévues "virtuelles" (entraîneurs hors Nolio)
+  const NOM_SPORT = { velo: 'Vélo - Route', natation: 'Natation', course: 'Course à pied', muscu: 'Musculation', autre: 'Autre' };
+  function notesPrevues(sa) {
+    const parJour = {}, repos = new Set();
+    const structure = new Set((sa.planned || []).map(p => p.date_start));
+    for (const n of sa.planned_notes || []) {
+      const r = lireNote(n); if (!r) continue;
+      const d = n.date_start; if (!d) continue;
+      if (r.repos) { if (!n.date_end || n.date_end === d) repos.add(d); continue; }
+      if (n.date_end && n.date_end !== d) continue;   // note sur plusieurs jours (stage…) : pas une séance
+      if (structure.has(d)) continue;                 // déjà une vraie séance prévue ce jour-là
+      for (const it of r.items) {
+        if (!it.duree && !it.dist && !it.zone && !it.consignes.length && !/\d\s*[x×]\s*\d/.test(it.texte)) continue;
+        const brut = `${n.text || n.name}`.trim();
+        (parJour[d] = parJour[d] || []).push({
+          date_start: d, fromNote: true, sport: NOM_SPORT[it.sport], duration: it.duree, distance: it.dist,
+          name: '📝 ' + (r.items.length > 1 ? it.aff.charAt(0).toUpperCase() + it.aff.slice(1) : brut).slice(0, 90),
+          description: it.texte, plan: [], zoneNote: it.zone, consignes: it.consignes,
+        });
+      }
+    }
+    return { prevus: Object.values(parJour).flat(), repos };
+  }
+
   // ── Lecture d'une cible (W, %FTP, zone) → plage de watts ───────────
   function cible(st, ftp) {
     if (!st) return null;
@@ -1311,6 +1389,9 @@ const IA = (() => {
       }
     }
     if (!out.reps && maxZ && maxZ <= 2) out.endurance = { zone: maxZ };
+    // Note : "Z1"/"Z2" n'ont pas forcément le même sens chez chaque entraîneur → endurance = jusqu'à Z2
+    if (!out.reps && !out.endurance && pl.zoneNote && pl.zoneNote <= 2) out.endurance = { zone: 2 };
+    if (!out.reps && !out.endurance && pl.fromNote && famille(pl.sport) === 'velo' && (pl.consignes || []).length) out.endurance = { zone: 2 };
     if (!out.reps && !out.endurance && /endu|z2|i2|fond|r[ée]cup|easy|cool/i.test(`${pl.name} ${pl.description}`)) out.endurance = { zone: 2 };
     return out;
   }
@@ -1330,6 +1411,12 @@ const IA = (() => {
       res.termine = ratio >= seuil;
       if (ratio < seuil) res.notes.push(`Durée ${dur(w.duration)} pour ${dur(c.duree)} prévues (${Math.round(ratio * 100)}%)`);
       else if (ratio > 1.3) res.notes.push(`Séance plus longue que prévu (${dur(w.duration)} pour ${dur(c.duree)})`);
+    }
+    if (ratio == null && pl.distance && w.distance) {
+      const rd = w.distance / pl.distance;
+      res.termine = rd >= 0.85;
+      if (rd < 0.85) res.notes.push(`${Math.round(w.distance)} km pour ${Math.round(pl.distance)} km prévus (${Math.round(rd * 100)}%)`);
+      else if (rd > 1.3) res.notes.push(`Plus long que prévu (${Math.round(w.distance)} km pour ${Math.round(pl.distance)} km)`);
     }
     const blocks = w.resume_blocks || [];
     const groups = blocks.filter(b => b.t === 'reps');
@@ -1392,13 +1479,39 @@ const IA = (() => {
       const hardT = blocks.filter(b => b.t !== 'easy').reduce((a, b) => a + (b.t === 'reps' ? b.n * b.d : (b.d || 0)), 0);
       const tot = blocks.reduce((a, b) => a + (b.t === 'reps' ? b.n * (b.d + (b.r || 0)) : (b.d || 0)), 0) || w.duration;
       const easyP = avg(blocks.filter(b => b.t === 'easy').map(b => b.p)) || 0;
+      const tol = (pl.consignes || []).length ? .3 : .12;   // efforts demandés dans la consigne
       res.detail = `Prévu endurance Z${c.endurance.zone} → ${w.resume || ''}`;
-      if (hardT > .12 * tot) { res.respecte = false; res.partiel = true; res.notes.push(`${dur(hardT)} au-dessus de Z2 sur une séance d'endurance`); }
+      if (hardT > tol * tot) { res.respecte = false; res.partiel = true; res.notes.push(`${dur(hardT)} au-dessus de Z2 sur une séance d'endurance`); }
       else if (zoneOf(easyP, ftp) > c.endurance.zone) { res.respecte = false; res.partiel = true; res.notes.push('Endurance faite trop vite'); }
       else res.respecte = true;
     } else {
       res.respecte = null; // rien de mesurable (muscu, course sans puissance…)
       if (pl.rpe && w.rpe && Math.abs(w.rpe - pl.rpe) >= 3) res.notes.push(`RPE ${w.rpe} pour ${pl.rpe} prévu`);
+    }
+    // Consignes écrites en note : sprints, force à basse cadence
+    for (const cg of pl.consignes || []) {
+      const ef = w.efforts;
+      const att = cg.n ? `${cg.n}` : 'des';
+      if (!ef) {
+        res.notes.push(`Consigne « ${cg.type === 'sprint' ? 'sprints' : 'force'} » non vérifiable${famille(w.sport) === 'velo' && !w.avg_watt ? ' (pas de capteur de puissance)' : ''}`);
+        continue;
+      }
+      if (cg.type === 'sprint') {
+        const n = ef.sp.length, mx = n ? Math.max(...ef.sp.map(x => x[1])) : 0;
+        const okS = cg.n ? n >= cg.n - 1 : n > 0;
+        res.detail = (res.detail ? res.detail + ' · ' : '') + `Sprints : ${att} prévus → ${n} détecté${n > 1 ? 's' : ''}${n ? ` (pic 5 s ${mx}W)` : ''}`;
+        if (!okS) { res.notes.push(cg.n ? `${n}/${cg.n} sprints` : 'Aucun sprint détecté'); res.respecte = false; res.partiel = n > 0 || res.partiel; }
+        else if (res.respecte == null) res.respecte = true;
+      } else if (cg.type === 'force') {
+        const bl = ef.fo.filter(b => !cg.d || b[1] >= .6 * cg.d);
+        const n = bl.length, rpm = n ? Math.round(avg(bl.map(b => b[2]))) : null, pw = n ? Math.round(avg(bl.map(b => b[3]))) : null;
+        const okN = cg.n ? n >= cg.n - 1 : n > 0;
+        const okR = !rpm || !cg.rpmLo || (rpm >= cg.rpmLo - 5 && rpm <= cg.rpmHi + 5);
+        res.detail = (res.detail ? res.detail + ' · ' : '') + `Force : ${att} × ${cg.d ? rep(cg.d) : ''}${cg.rpmLo ? ` à ${cg.rpmLo}-${cg.rpmHi} rpm` : ''} prévus → ${n} bloc${n > 1 ? 's' : ''}${n ? ` à ${rpm} rpm, ${pw}W` : ''}`;
+        if (!okN) { res.notes.push(cg.n ? `${n}/${cg.n} blocs de force` : 'Aucun bloc de force détecté'); res.respecte = false; res.partiel = n > 0 || res.partiel; }
+        else if (!okR) { res.notes.push(`Cadence ${rpm} rpm hors consigne`); res.respecte = false; res.partiel = true; }
+        else if (res.respecte == null) res.respecte = true;
+      }
     }
     // Niveau : ok / partiel / non
     if (res.respecte === false && !res.partiel) res.niveau = 'non';
@@ -1457,7 +1570,8 @@ const IA = (() => {
   // ── Semaine complète ───────────────────────────────────────────────
   function semaine(sa, from, to, today) {
     const tr = [...(sa.trainings_90d || []), ...(sa.trainings_prev_30d || [])];
-    const pl = sa.planned || [];
+    const NP = notesPrevues(sa);
+    const pl = [...(sa.planned || []), ...NP.prevus];
     const ftp = (tr.find(t => t.ftp) || {}).ftp || null;
     const auj = ymd(today || new Date());
     const jours = [];
@@ -1465,7 +1579,7 @@ const IA = (() => {
       const k = ymd(d);
       const faits = tr.filter(t => t.date_start === k && ((t.duration || 0) >= 600 || t.restriction));
       const prevus = pl.filter(p => p.date_start === k);
-      jours.push({ ...journee(k, prevus, faits, ftp, auj), jour: JOURS[d.getDay()] });
+      jours.push({ ...journee(k, prevus, faits, ftp, auj), jour: JOURS[d.getDay()], reposPrevu: NP.repos.has(k) });
     }
     return { jours, ftp, tr, auj };
   }
@@ -1480,7 +1594,9 @@ const IA = (() => {
     const nbOk = lignes.filter(l => l.niveau === 'ok').length, nbPart = lignes.filter(l => l.niveau === 'partiel').length;
     const faitsSem = passes.flatMap(j => j.faits);
     const hFait = faitsSem.reduce((a, w) => a + (w.duration || 0), 0);
-    const hPrevu = passes.flatMap(j => j.prevus).reduce((a, p) => a + (p.duration || 0), 0);
+    const prevPass = passes.flatMap(j => j.prevus);
+    // Volume prévu comparable seulement si chaque séance prévue a une durée (une note "70km" n'en a pas)
+    const hPrevu = prevPass.some(p => !p.duration && famille(p.sport || p.name) !== 'muscu') ? 0 : prevPass.reduce((a, p) => a + (p.duration || 0), 0);
     const useTss = tr.filter(w => w.load_coggan).length >= tr.filter(w => w.load_foster).length;
     const LOAD = w => (useTss ? w.load_coggan : w.load_foster) || 0, LU = useTss ? 'TSS' : 'UA';
     const ua = faitsSem.reduce((a, w) => a + LOAD(w), 0);
@@ -1565,6 +1681,7 @@ const IA = (() => {
           ${l.detail ? `<div style="color:#a5b4fc">${l.detail}</div>` : ''}
           ${l.notes.length ? `<div style="color:#fbbf24">${l.notes.join(' · ')}</div>` : ''}</div>`;
       }
+      if (j.reposPrevu && j.libres.length && j.date <= auj) h += `<div style="font-size:10.5px;margin-top:3px;color:#fbbf24">Repos prévu, mais séance faite</div>`;
       for (const w of j.libres) h += `<div style="font-size:10.5px;margin-top:3px;color:#93c5fd">➕ ${w.name || w.sport} (${dur(w.duration)})${w.resume ? ' : ' + w.resume : ''}</div>`;
       h += `</div>`;
     }
@@ -1584,7 +1701,7 @@ const IA = (() => {
     return { html: h, score, verdict: verdict[0], jours, texte: null };
   }
 
-  return { semaine, rapport, journee, comparer, coeurPrevu, famille, STATUT, ymd };
+  return { semaine, rapport, journee, comparer, coeurPrevu, famille, STATUT, ymd, lireNote, notesPrevues };
 })();
 
 // ── Résumé de ce qui a été fait (calculé par la synchro depuis le fichier .fit) ──
@@ -1685,12 +1802,8 @@ function renderModal(aid,name,allWorkouts,intensityWorkouts,enduranceWorkouts,fo
     </div>`;
 
   // Watts / FC (séances intensité)
-  const powerHTML=hasPower?`
-    <div class="csec" style="margin-bottom:16px">
-      <h3>💜 Efficacité cardiaque vs Fatigue (TSS)</h3>
-      <p style="font-size:10px;color:var(--mt);margin:-4px 0 10px">NP ÷ FC moyenne × 10 — point violet = au-dessus de sa moyenne (bon), rouge = en dessous. Si l'efficacité baisse quand le TSS monte → fatigue réelle.</p>
-      <div class="cwrap"><canvas id="m_pwr_${aid}"></canvas></div>
-    </div>`:'';
+  const EFF=efficaciteCalc(aid);
+  const powerHTML=efficaciteHTML(aid,EFF);
 
   // Mini IA : verdict de chaque jour / séance sur la période
   let iaSem=null; const iaParSeance={};
@@ -1805,7 +1918,7 @@ function renderModal(aid,name,allWorkouts,intensityWorkouts,enduranceWorkouts,fo
     const safe=(f)=>{try{f();}catch(e){console.warn('Graphique:',e);}};
     safe(()=>renderFormeChart(aid, formeCurve));
     if(sleepDaily.length>1) safe(()=>renderSleepChart(aid, sleepDaily, allWorkouts));
-    if(hasPower) safe(()=>renderPowerChart(aid, allWorkouts, s?.restHR));
+    if(EFF&&EFF.rides.length>=2) safe(()=>renderPowerChart(aid, EFF));
     if(s?.cpPoints&&s.cpPoints.length>=2) safe(()=>renderCPChart(aid, s.cpPoints, s.cpValue, s.wPrime));
   }, 100);
 }
@@ -1886,35 +1999,85 @@ function renderFormeChart(aid, formeCurve) {
   });
 }
 
-function renderPowerChart(aid, workouts, restHR) {
-  const ctx=document.getElementById(`m_pwr_${aid}`);if(!ctx)return;
-  const k=`m_pwr_${aid}`;if(charts[k])charts[k].destroy();
-  // FC : Nolio n'expose pas la FC moyenne de séance dans l'objet training
-  // On utilise max_hr_user (FC max atteinte) comme proxy — EF = NP/FCmax×10
-  // C'est moins précis que NP/FCmoy mais cohérent sur toutes les séances du même athlète
-  const getHR=w=>w.avg_hr||w.avg_heartrate||w.average_heartrate||w.average_hr||w.heart_rate_avg||w.heartrate_avg||w.hr_avg||w.max_hr_user||null;
-  const valid=workouts.filter(w=>w.np&&w.np>0&&getHR(w)&&getHR(w)>0);
-  if(!valid.length){
-    const c=document.getElementById(`m_pwr_${aid}`);
-    if(c) c.parentElement.innerHTML=`<p style="font-size:10px;color:var(--mt);text-align:center;padding:20px">Pas de données NP+FC disponibles.<br><span style="font-size:9px">Séances avec NP: ${workouts.filter(w=>w.np>0).length} — champs dispo: ${workouts[0]?Object.keys(workouts[0]).filter(k=>k.includes('hr')||k.includes('heart')||k.includes('fc')).join(', '):'aucune séance'}</span></p>`;
-    return;
+// ── Efficacité aérobie : EF = NP ÷ FC moyenne (Joe Friel / TrainingPeaks), calculée par la synchro depuis le .fit ──
+// On ne compare que des sorties comparables : endurance (IF ≤ 0,85). Les séances intenses sont montrées sans verdict.
+function efficaciteCalc(aid){
+  const sa=(staticData&&staticData.athletes||[]).find(a=>String(a.athlete_id)===String(aid));
+  if(!sa)return null;
+  const all=[...(sa.trainings_90d||[]),...(sa.trainings_prev_30d||[])];
+  const vus=new Set();
+  const rides=all.filter(w=>w.effic&&w.effic.ef&&!vus.has(w.nolio_id)&&vus.add(w.nolio_id))
+    .sort((x,y)=>(x.date_start||'').localeCompare(y.date_start||''))
+    .map(w=>{const e=w.effic;const tss=w.load_coggan||Math.round(e.dur*(e.if||0)**2/36);
+      return{w,date:w.date_start,ef:e.ef,np:e.np,hr:e.hr,IF:e.if,dec:e.dec,dur:e.dur,tss,endu:(e.if||0)<=0.85};});
+  const med=a=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2;};
+  // verdict de chaque sortie d'endurance par rapport aux 10 sorties d'endurance précédentes
+  const endu=[];
+  for(const r of rides){
+    if(r.endu){
+      const base=med(endu.slice(-10).map(x=>x.ef));
+      if(base&&endu.length>=3){r.delta=(r.ef-base)/base;r.base=base;}
+      endu.push(r);
+    }
+    const longue=r.endu&&r.dur>=5400&&r.dec!=null;
+    r.derive=longue?(r.dec>5?'haute':'ok'):null;
+    if(!r.endu)r.verdict={t:'Séance intense : efficacité non comparable',c:'#64748b'};
+    else if(r.delta==null)r.verdict={t:'Pas encore assez de sorties pour comparer',c:'#64748b'};
+    else if(r.delta<=-0.04)r.verdict={t:'Moins efficace que d\'habitude : cœur plus haut pour la même puissance (fatigue, chaleur, maladie ?)',c:'#f87171'};
+    else if(r.derive==='haute')r.verdict={t:'Efficace au départ, mais le cœur dérive en 2e moitié : endurance de fond à travailler',c:'#fbbf24'};
+    else if(r.delta>=0.03)r.verdict={t:'Plus efficace que d\'habitude : bonne forme',c:'#22c55e'};
+    else r.verdict={t:'Efficacité normale',c:'#a78bfa'};
   }
-  const labels=valid.map(w=>new Date(w.date_start).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}));
-  const efData=valid.map(w=>Math.round((w.np/getHR(w))*100)/10);
-  const tssData=valid.map(w=>{
-    if(w.tss&&w.tss>0) return Math.round(w.tss);
-    const ftp=w.ftp||260;
-    return Math.round((w.duration*(w.np/ftp)**2)/36);
-  });
-  const avgEF=Math.round(efData.reduce((a,b)=>a+b)/efData.length*10)/10;
+  const now=new Date(),d28=new Date(now-28*864e5).toISOString().slice(0,10),d56=new Date(now-56*864e5).toISOString().slice(0,10);
+  const recent=med(endu.filter(r=>r.date>=d28).map(r=>r.ef)),avant=med(endu.filter(r=>r.date<d28&&r.date>=d56).map(r=>r.ef));
+  const longues=endu.filter(r=>r.derive&&r.date>=d28);
+  return{rides,endu,recent,avant,trend:recent&&avant?(recent-avant)/avant:null,
+    decMoy:longues.length?longues.reduce((a,r)=>a+r.dec,0)/longues.length:null,nbLongues:longues.length,
+    nbPlus:endu.filter(r=>r.date>=d28&&r.delta>=0.03).length,nbMoins:endu.filter(r=>r.date>=d28&&r.delta<=-0.04).length,nbRecent:endu.filter(r=>r.date>=d28).length,
+    sansFC:all.filter(w=>w.resume&&!(w.effic&&w.effic.ef)).length};
+}
+function efficaciteHTML(aid,E){
+  const head=`<h3>💜 Efficacité aérobie (puissance ÷ FC) & charge</h3>`;
+  if(!E||E.rides.length<2)return`<div class="csec" style="margin-bottom:16px">${head}<p style="font-size:10px;color:var(--mt)">Pas encore assez de sorties avec capteur de puissance <b>et</b> ceinture/montre cardio. Le calcul se fait à la synchro depuis le fichier de chaque sortie (il peut falloir 1 à 2 synchros pour remplir l'historique).</p></div>`;
+  const pct=x=>`${x>=0?'+':''}${(x*100).toFixed(1)}%`;
+  const lignes=[];
+  if(E.trend!=null){
+    const t=E.trend;
+    lignes.push(`<b style="color:${t>=0.02?'#22c55e':t<=-0.03?'#f87171':'#e2e8f0'}">${t>=0.02?'📈 La base aérobie progresse':t<=-0.03?'📉 Efficacité en baisse':'➡️ Efficacité stable'}</b> : ${E.recent.toFixed(2)} W/batt. sur les 4 dernières semaines vs ${E.avant.toFixed(2)} les 4 d'avant (${pct(t)}), sorties d'endurance seulement.`);
+  } else lignes.push(`Tendance sur 8 semaines pas encore calculable (il faut des sorties d'endurance sur les deux périodes).`);
+  if(E.nbRecent)lignes.push(`4 dernières semaines : ${E.nbRecent} sortie${E.nbRecent>1?'s':''} d'endurance · <span style="color:#22c55e">${E.nbPlus} plus efficace${E.nbPlus>1?'s':''}</span> · <span style="color:#f87171">${E.nbMoins} moins efficace${E.nbMoins>1?'s':''}</span> que d'habitude.`);
+  if(E.decMoy!=null)lignes.push(`Dérive cardiaque moyenne sur les sorties longues (≥1h30) : <b style="color:${E.decMoy<=5?'#22c55e':'#fbbf24'}">${E.decMoy.toFixed(1)}%</b> ${E.decMoy<=5?'(≤ 5 % : bonne endurance de fond)':'(> 5 % : le cœur monte en fin de sortie, plus de volume en endurance utile)'}.`);
+  if(E.sansFC)lignes.push(`<span style="color:var(--mt)">${E.sansFC} sortie${E.sansFC>1?'s':''} avec puissance mais sans FC exploitable : non comptée${E.sansFC>1?'s':''}.</span>`);
+  return`<div class="csec" style="margin-bottom:16px">${head}
+    <div style="font-size:11px;line-height:1.6;margin:-2px 0 8px">${lignes.map(l=>`<div>${l}</div>`).join('')}</div>
+    <div class="cwrap"><canvas id="m_pwr_${aid}"></canvas></div>
+    <p style="font-size:9px;color:var(--mt);margin-top:6px">Points = efficacité de chaque sortie (watts produits par battement de cœur, NP ÷ FC moyenne). Vert = plus efficace que ses 10 dernières sorties d'endurance, rouge = moins efficace, gris creux = séance intense (non comparable). Ligne = tendance. Barres = charge (TSS) : l'impact de la sortie. Une bonne période = efficacité qui monte pendant que la charge tient.</p>
+  </div>`;
+}
+function renderPowerChart(aid, E) {
+  const ctx=document.getElementById(`m_pwr_${aid}`);if(!ctx||!E)return;
+  const k=`m_pwr_${aid}`;if(charts[k])charts[k].destroy();
+  const R=E.rides;
+  const labels=R.map(r=>new Date(r.date).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}));
+  const col=r=>!r.endu?'rgba(100,116,139,.0)':r.delta==null?'#94a3b8':r.delta>=0.03?'#22c55e':r.delta<=-0.04?'#f87171':'#a78bfa';
+  // tendance : moyenne glissante des 5 dernières sorties d'endurance
+  const tend=[];const buf=[];for(const r of R){if(r.endu){buf.push(r.ef);if(buf.length>5)buf.shift();}tend.push(buf.length>=3?+(buf.reduce((a,b)=>a+b)/buf.length).toFixed(3):null);}
   charts[k]=new Chart(ctx,{
-    type:'line',
     data:{labels,datasets:[
-      {label:'Efficacité (NP/FC×10)',data:efData,borderColor:'rgba(167,139,250,.9)',backgroundColor:'rgba(167,139,250,.15)',borderWidth:2,pointRadius:5,fill:true,tension:.3,yAxisID:'y',pointBackgroundColor:efData.map(v=>v>=avgEF?'#a78bfa':'#f87171')},
-      {label:'TSS',data:tssData,borderColor:'rgba(251,191,36,.6)',backgroundColor:'transparent',borderWidth:1.5,pointRadius:3,borderDash:[4,4],tension:.3,yAxisID:'y2'},
-      {label:`Moy. ${avgEF}`,data:labels.map(()=>avgEF),borderColor:'rgba(167,139,250,.3)',backgroundColor:'transparent',borderWidth:1,pointRadius:0,borderDash:[2,6],yAxisID:'y'}
+      {type:'line',label:'Efficacité (W/batt.)',data:R.map(r=>r.ef),showLine:false,pointRadius:R.map(r=>r.endu?5:4),pointBorderWidth:R.map(r=>r.endu?1:2),
+        pointBackgroundColor:R.map(col),pointBorderColor:R.map(r=>r.endu?'#0f1520':'#64748b'),yAxisID:'y',order:1},
+      {type:'line',label:'Tendance endurance',data:tend,borderColor:'rgba(167,139,250,.85)',borderWidth:2,pointRadius:0,tension:.35,spanGaps:true,yAxisID:'y',order:2},
+      {type:'bar',label:'Charge (TSS)',data:R.map(r=>r.tss),backgroundColor:'rgba(251,191,36,.22)',borderColor:'rgba(251,191,36,.5)',borderWidth:1,yAxisID:'y2',order:3}
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',font:{size:9}}},tooltip:{callbacks:{afterBody:(items)=>{const i=items[0].dataIndex;const ef=efData[i];const tss=tssData[i];const delta=Math.round((ef-avgEF)*10)/10;if(tss>100&&delta<0)return['⚠️ Efficacité basse avec TSS élevé → fatigue'];if(delta>0)return[`+${delta} vs moy → bonne forme`];return[`${delta} vs moy → surveiller`];}}}},scales:{x:{ticks:{color:'#64748b',font:{size:8}},grid:{display:false}},y:{position:'left',title:{display:true,text:'Efficacité NP/FC',color:'#a78bfa',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{color:'rgba(42,51,71,.4)'}},y2:{position:'right',title:{display:true,text:'TSS',color:'#fbbf24',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{display:false}}}}
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#94a3b8',font:{size:9}}},
+        tooltip:{filter:it=>it.datasetIndex===0,callbacks:{
+          title:it=>{const r=R[it[0].dataIndex];return`${labels[it[0].dataIndex]} · ${r.w.name||r.w.sport||''}`;},
+          label:it=>{const r=R[it.dataIndex];return[`Efficacité ${r.ef.toFixed(2)} W/batt. (NP ${r.np}W ÷ FC ${r.hr})`,`Intensité ${Math.round((r.IF||0)*100)}% FTP · charge ${r.tss} TSS`].concat(r.delta!=null?[`${r.delta>=0?'+':''}${(r.delta*100).toFixed(1)}% vs ses sorties habituelles`]:[]).concat(r.dec!=null&&r.endu&&r.dur>=5400?[`Dérive cardiaque ${r.dec}%`]:[]);},
+          afterBody:it=>{const r=R[it[0].dataIndex];return['',r.verdict.t];}}}},
+      scales:{x:{ticks:{color:'#64748b',font:{size:8},maxRotation:0,autoSkip:true,maxTicksLimit:10},grid:{display:false}},
+        y:{position:'left',title:{display:true,text:'Watts par battement',color:'#a78bfa',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{color:'rgba(42,51,71,.4)'}},
+        y2:{position:'right',beginAtZero:true,title:{display:true,text:'TSS',color:'#fbbf24',font:{size:8}},ticks:{color:'#94a3b8',font:{size:8}},grid:{display:false}}}}
   });
 }
 
