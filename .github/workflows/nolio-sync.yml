@@ -21,3 +21,9 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           NOLIO_CLIENT_SECRET: ${{ secrets.NOLIO_CLIENT_SECRET }}
         run: python sync/sync_cloud.py
+      - name: Charge muscu (50 Coggan par heure)
+        if: always()
+        continue-on-error: true
+        env:
+          NOLIO_API_KEY: ${{ secrets.NOLIO_API_KEY }}
+        run: python sync/charge_muscu.py
